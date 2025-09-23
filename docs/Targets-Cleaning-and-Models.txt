@@ -1,0 +1,25 @@
+Dataset + Targets:
+kaggle_credit_card_fraud: Target = class (0 for non-fraud, 1 for fraud)
+kaggle_patient_survival: Target = hospital_death (0 for no death, 1 for death)
+uci_android_permissions: Target = result (0 for not malware, 1 for malware)
+uci_breast_cancer: Target = diagnosis (M for malignant, B for benevolent)
+uci_heart_disease: Target = diagnosis (0 for no heart disease, 1 for heart disease)
+uci_indian_liver: Target = has_liver_disease (0 for no disease, 1 for disease)
+uci_mushroom: Target = poisonous (p for poisonous, e for edible)
+uci_phishing_url: Target = label (0 for real url, 1 for phishing url)
+uci_secondary_mushroom: Target = class (p for poisonous, e for edible)
+uci_spect_heart: Target = diagnosis (0 for no heart problems, 1 for heart problems)
+
+Cleaning:
+Remove duplicate rows, if any
+Drop unnecessary columns (ex: patient_id should be dropped since it is not useful for machine learning)
+Use Label Encoding or One Hot Encoding as needed to convert categorical columns (One Hot Encoding may be bad if used on columns with many values, as it increases dimensionality by a lot)
+Use StandardScaler on numerical columns (important for SVC)
+
+Models + Suggested Hyperparameters:
+(Use GridSearchCV from Sklearn, cv = 5 or 10 depending on size of the dataset, lower cv for bigger dataset)
+(May not need to tune all parameters as you want the grids to be somewhat small to make training realistic)
+Decision Tree - max_depth (try 3-11 by steps of 2 and None for full tree depending on dataset size), min_samples_split (2-10 by steps of 2), min_samples_leaf (1-20 depending on dataset size)
+Random Forest - n_estimators (50-200 for small datasets by steps of 50, bigger datasets 100-500 by steps of 100), other parameters same as decision tree
+XGBoost - n_estimators (100 on smaller datasets, 200-400 by steps of 100 on larger ones), max_depth (3-5), min_child_weight (1-5), subsample (0.5-1), colsample_bytree (0.5-1)
+SVC - C (0.1-100 by powers of 10), gamma (0.1-100 by powers of 10)
