@@ -13,6 +13,7 @@ uci_spect_heart: Target = diagnosis (0 for no heart problems, 1 for heart proble
 Cleaning:
 Remove duplicate rows, if any
 Drop unnecessary columns (ex: patient_id should be dropped since it is not useful for machine learning)
+Fix missing values if needed (impute using mean or median for numerical columns, use your judgement, and with mode for categorical columns)
 Use Label Encoding or One Hot Encoding as needed to convert categorical columns (One Hot Encoding may be bad if used on columns with many values, as it increases dimensionality by a lot)
 Use StandardScaler on numerical columns (important for SVC)
 
