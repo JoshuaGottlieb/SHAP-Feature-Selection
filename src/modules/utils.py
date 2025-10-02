@@ -34,7 +34,6 @@ def load_object(path: str) -> Any:
 
     return obj
 
-
 def load_dataset(path: str, compression: str = 'gzip') -> pd.DataFrame:
     """
     Load a dataset from a CSV file into a pandas DataFrame.
