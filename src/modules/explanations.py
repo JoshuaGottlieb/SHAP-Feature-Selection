@@ -52,20 +52,21 @@ def generate_shap_explanations(model: Any, data: pd.DataFrame, name: str,
     start_time = time.time()
 
     # Initialize the SHAP permutation explainer
-    explainer = shap.explainers.Permutation(model.predict_proba, feature_data, random_state = random_state)
+    explainer = shap.PermutationExplainer(model.predict_proba, feature_data, random_state = random_state)
 
     # Compute SHAP values
-    shap_values = explainer(feature_data)
+    shap_values = explainer.shap_values(feature_data)
 
-    # Extract main components
-    explanations = shap_values.values
+    # Extract mean absolute values
+    mean_absolute_shap_values = np.mean(np.abs(shap_values[:, : , 1]), axis = 0)
 
     elapsed_time = time.time() - start_time
 
     return {
         "name": name,
         "time_to_explain": elapsed_time,
-        "shap_values": explanations,
+        "shap_values": shap_values,
+        "mean_absolute_shap_values": mean_absolute_shap_values
     }
 
 def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optional[str] = None,
@@ -183,13 +184,13 @@ def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optiona
         total_time += fold_result["time_to_explain"]
 
     # === COMPUTE AVERAGE VALUES ===
-    average_shap_values = np.mean(np.stack(shap_arrays, axis = 0), axis = 0)
+    cross_fold_mean_abs_shap = np.mean(np.abs(np.stack(shap_arrays, axis = 0)[:, :, 1]), axis = 0)
 
     # === COMBINE RESULTS ===
     combined_result = {
         "name": strategy,
         "folds": folds_results,
-        "average_shap_values": average_shap_values,
+        "cross_fold_mean_absolute_shap_values": cross_fold_mean_abs_shap,
         "total_time": total_time
     }
 
