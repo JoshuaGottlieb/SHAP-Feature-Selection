@@ -8,7 +8,8 @@ from modules.utils import save_object
 def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],
               model_name: str, model: BaseEstimator, grid_search: bool = False,
               param_grid: Dict[str, Any] = {}, cv: int = 5, random_state: int = 42,
-              save: bool = True, save_path: str = './models/temp_model.pickle') -> Union[Pipeline, GridSearchCV]:
+              save: bool = True, save_path: str = './models/temp_model.pickle',
+              compression = None) -> Union[Pipeline, GridSearchCV]:
     """
     Fit a machine learning model (optionally with grid search) and save it.
 
@@ -34,33 +35,37 @@ def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],
             Whether to save the trained model. Default is True.
         save_path (str, optional): 
             Path to save the trained model pickle file. Default is './models/temp_model.pickle'.
+        compression (str, optional):
+            Compression type to use ('gzip', 'bz2', 'lzma', or None).
+            Defaults to None (uncompressed).
 
     Returns:
         Union[Pipeline, GridSearchCV]: 
             The trained model pipeline, optionally wrapped in a GridSearchCV object.
     """
-
-    # Define the pipeline with the given model
-    pipeline = Pipeline(steps = [(model_name, model)])
         
-    # Wrap pipeline in a GridSearchCV if requested
+    # GridSearchCV if requested
     if grid_search:
+        # Define the pipeline with the given model
+        pipeline = Pipeline(steps = [(model_name, model)])
+        
         full_model = GridSearchCV(
             estimator = pipeline,
             param_grid = param_grid,
             cv = cv,
-            scoring = ['average_precision', 'roc_auc', 'f1', 'accuracy'],
+            scoring = 'average_precision',
             refit = 'average_precision',  # use AP score for final refit
-            n_jobs = -1
+            n_jobs = -1,
+            verbose = 3
         )
     else:
-        full_model = pipeline
+        full_model = model
         
     # Fit the model on the training data
     full_model.fit(X_train, y_train)
     
     # Save the trained model if requested
     if save:
-        save_object(full_model, save_path)
+        save_object(full_model, save_path, compression = compression)
     
     return full_model
