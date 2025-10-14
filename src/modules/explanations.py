@@ -2,10 +2,10 @@ import shap
 import time
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Union, Optional
+from typing import Any, Dict, Union, Optional, Callable
 from sklearn.model_selection import StratifiedKFold
 
-def generate_shap_explanations(model: Any, data: pd.DataFrame, name: str, 
+def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame, name: str, 
                                target_col: Optional[str] = None,
                                random_state: Optional[int] = None) -> Dict[str, Any]:
     """
@@ -14,8 +14,8 @@ def generate_shap_explanations(model: Any, data: pd.DataFrame, name: str,
 
     Parameters
     ----------
-    model : Any
-        A fitted model that implements a `predict_proba()` method.
+    model_eval : Any
+        A fitted model evluation method.
     data : pd.DataFrame
         The dataset containing feature columns and a target variable.
     name : str
@@ -52,13 +52,13 @@ def generate_shap_explanations(model: Any, data: pd.DataFrame, name: str,
     start_time = time.time()
 
     # Initialize the SHAP permutation explainer
-    explainer = shap.PermutationExplainer(model.predict_proba, feature_data, random_state = random_state)
+    explainer = shap.PermutationExplainer(model_eval, feature_data, random_state = random_state)
 
     # Compute SHAP values
     shap_values = explainer.shap_values(feature_data)
 
     # Extract mean absolute values
-    mean_absolute_shap_values = np.mean(np.abs(shap_values[:, : , 1]), axis = 0)
+    mean_absolute_shap_values = np.mean(np.abs(shap_values), axis = 0)
 
     elapsed_time = time.time() - start_time
 
@@ -69,7 +69,7 @@ def generate_shap_explanations(model: Any, data: pd.DataFrame, name: str,
         "mean_absolute_shap_values": mean_absolute_shap_values
     }
 
-def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optional[str] = None,
+def sample_shap_explanations(model_eval: Callable, data: pd.DataFrame, target_col: Optional[str] = None,
                              random_state: Optional[int] = None, strategy: Union[str, float] = "global",
                              k: int = 5, verbose: bool = False) -> Dict[str, Any]:
     """
@@ -77,8 +77,8 @@ def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optiona
 
     Parameters
     ----------
-    model : Any
-        A fitted model with a `predict_proba()` method.
+    model_eval : Any
+        A fitted model evluation method.
     data : pd.DataFrame
         The dataset to explain, containing features and optionally a target column.
     target_col : Optional[str], default = None
@@ -128,7 +128,7 @@ def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optiona
     if strategy == "global":
         if verbose:
             print(f"[INFO] Running full SHAP explanations on all {n} samples...")
-        result = generate_shap_explanations(model, data, name = "global",
+        result = generate_shap_explanations(model_eval, data, name = "global",
                                             target_col = target_col, random_state = random_state)
         return result
 
@@ -175,7 +175,7 @@ def sample_shap_explanations(model: Any, data: pd.DataFrame, target_col: Optiona
             print(f"[INFO] Processing fold {fold_idx} with {len(fold_sample)} samples...")
 
         fold_result = generate_shap_explanations(
-            model, fold_sample, name = f"fold{fold_idx}",
+            model_eval, fold_sample, name = f"fold{fold_idx}",
             target_col = target_col, random_state = random_state
         )
 
