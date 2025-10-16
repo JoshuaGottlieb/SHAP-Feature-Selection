@@ -1,13 +1,14 @@
 import shap
+import os
 import time
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Union, Optional, Callable
-from sklearn.model_selection import StratifiedKFold
+from typing import Any, Dict, Optional, Callable
+from modules.utils import load_object, save_object
 
-def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame, name: str, 
-                               target_col: Optional[str] = None,
-                               random_state: Optional[int] = None) -> Dict[str, Any]:
+def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame,
+                               random_state: Optional[int] = None,
+                               batch: slice = None) -> Dict[str, Any]:
     """
     Generate SHAP explanations for a fitted model using the Permutation explainer,
     excluding the target column from the feature set.
@@ -18,8 +19,6 @@ def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame, name: s
         A fitted model evluation method.
     data : pd.DataFrame
         The dataset containing feature columns and a target variable.
-    name : str
-        A descriptive name for the model or experiment, used in the output.
     target_col : str, optional
         The name of the target column. If not provided, the function assumes
         the last column in `data` is the target and excludes it automatically.
@@ -42,18 +41,24 @@ def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame, name: s
     - Automatically excludes the target column (by name or position).
     - Works for classification models supporting `predict_proba()`.
     - The SHAP values correspond to predicted class probabilities.
-    """
-    # Drop the target column if specified or assume last column
-    if target_col and target_col in data.columns:
-        feature_data = data.drop(columns = [target_col])
+    """   
+    
+    # Use the full dataset for background
+    background_data = data.iloc[:, :-1]
+
+    # Apply batching, if applicable
+    if batch is not None:
+        feature_data = data.iloc[batch, :-1]
     else:
         feature_data = data.iloc[:, :-1]
     
     start_time = time.time()
 
     # Initialize the SHAP permutation explainer
-    explainer = shap.PermutationExplainer(model_eval, feature_data, random_state = random_state)
+    explainer = shap.PermutationExplainer(model_eval, background_data, random_state = random_state)
 
+    print(f"[INFO] Running full SHAP explanations on all {len(feature_data)} samples...")
+    
     # Compute SHAP values
     shap_values = explainer.shap_values(feature_data)
 
@@ -63,138 +68,51 @@ def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame, name: s
     elapsed_time = time.time() - start_time
 
     return {
-        "name": name,
-        "time_to_explain": elapsed_time,
+        "time": elapsed_time,
         "shap_values": shap_values,
-        "mean_absolute_shap_values": mean_absolute_shap_values
+        "mean_shap": mean_absolute_shap_values
     }
 
-def sample_shap_explanations(model_eval: Callable, data: pd.DataFrame, target_col: Optional[str] = None,
-                             random_state: Optional[int] = None, strategy: Union[str, float] = "global",
-                             k: int = 5, verbose: bool = False) -> Dict[str, Any]:
+def aggregate_shap_batches(shap_dir: str, model_type: str) -> None:
     """
-    Generate SHAP explanations using different sampling strategies with K-Fold validation.
+    Aggregate SHAP explanation batches for a given model type into a single global explanation.
 
-    Parameters
-    ----------
-    model_eval : Any
-        A fitted model evluation method.
-    data : pd.DataFrame
-        The dataset to explain, containing features and optionally a target column.
-    target_col : Optional[str], default = None
-        Name of the target column. If None, the last column is assumed to be the target.
-    random_state : int, default = None
-        Random seed for reproducibility.
-    strategy : Union[str, float], default = "global"
-        Strategy for sampling data to compute SHAP values.
-        - "global": Use the entire dataset.
-        - "sqrt": Use sqrt(n * p) samples per fold, where n is the number of records and p is the number of features.
-                    Balances the number of records against the number of features via the geometric mean.
-        - "log": Use log2(n) * p samples per fold, where n is the number of records and p is the number of features.
-                    Ensures at least log2(n) points are sampled per feature and scales slowly when n >> p.
-        - float: Use that proportion (0 < value < 1) of data per fold.
-    k : int, default = 5
-        Number of folds for stratified K-Fold cross-validation.
-        Must be greater than 1.
-    verbose : bool, default = False
-        If True, prints progress and diagnostic information.
+    This function loads all SHAP batch files in a directory that match the given model type,
+    sums their computation times, concatenates their SHAP value arrays, and computes the
+    mean absolute SHAP values across all samples. The aggregated explanation is then saved
+    to disk using LZMA compression.
 
-    Returns
-    -------
-    Dict[str, Any]
-        Dictionary containing:
-        - 'name': strategy used
-        - 'folds': per-fold SHAP results
-        - 'average_shap_values': mean SHAP values across folds
-        - 'average_expected_value': mean expected SHAP value across folds
-        - 'average_base_value': mean base SHAP value across folds
-        - 'total_time': total time across folds
+    Args:
+        shap_dir (str): Path to the directory containing SHAP batch files.
+        model_type (str): Model identifier (e.g., 'rf', 'xgb') used to filter relevant files.
     """
-    if k <= 1:
-        raise ValueError("Parameter 'k' must be greater than 1.")
+    # List all files in the SHAP directory
+    files = os.listdir(shap_dir)
 
-    # Determine target column
-    if target_col is None:
-        target_col = data.columns[-1]
+    # Select SHAP batch files corresponding to the given model type
+    batches = [exp for exp in files if 'batch' in exp and model_type in exp]
 
-    # Separate features and target
-    X = data.drop(columns = [target_col])
-    y = data[target_col]
+    # Initialize global explanation structure
+    global_exp = {}
 
-    n = len(X)
-    p = X.shape[1]
+    # Load and aggregate each batch
+    for i, batch in enumerate(batches):
+        print(f'Aggregating batch {i + 1}')
+        batch_exp = load_object(os.path.join(shap_dir, batch))
+        if i == 0:
+            global_exp['time'] = batch_exp['time']
+            global_exp['shap_values'] = batch_exp['shap_values']
+        else:
+            global_exp['time'] += batch_exp['time']
+            global_exp['shap_values'] = np.vstack((global_exp['shap_values'], batch_exp['shap_values']))
 
-    # === FULL STRATEGY ===
-    if strategy == "global":
-        if verbose:
-            print(f"[INFO] Running full SHAP explanations on all {n} samples...")
-        result = generate_shap_explanations(model_eval, data, name = "global",
-                                            target_col = target_col, random_state = random_state)
-        return result
+    # Compute mean absolute SHAP values across all samples
+    global_exp['mean_shap'] = np.mean(np.abs(global_exp['shap_values']), axis = 0)
 
-    # === DETERMINE SAMPLE SIZE ===
-    if isinstance(strategy, float):
-        if not (0 < strategy < 1):
-            raise ValueError("Float strategy must be between 0 and 1 (exclusive).")
-        samples_per_fold = int(strategy * n)
-    elif strategy == "sqrt":
-        samples_per_fold = int(np.sqrt(n * p))
-    elif strategy == "log":
-        samples_per_fold = int(np.log2(n) * p)
-    else:
-        raise ValueError("Invalid strategy. Must be 'global', 'sqrt', 'log', or a float between 0 and 1.")
+    # Derive output file path from the first batch filename
+    global_exp_path = os.path.join(shap_dir, batches[0].split('-batch')[0])
 
-    # Oversampling check
-    total_samples = samples_per_fold * k
-    if total_samples >= n:
-        raise ValueError(
-            f"Sampling too large: strategy '{strategy}' with {k} folds "
-            f"would oversample ({total_samples} >= {n}). Reduce k or sampling rate."
-        )
+    # Save aggregated SHAP explanation with compression
+    save_object(global_exp, global_exp_path, compression = 'lzma')
 
-    if verbose:
-        print(f"[INFO] Strategy: {strategy}")
-        print(f"[INFO] Samples per fold: {samples_per_fold}")
-        print(f"[INFO] Total samples across folds: {total_samples}")
-        print(f"[INFO] Using StratifiedKFold with {k} splits.")
-
-    # === STRATIFIED KFOLD SETUP ===
-    skf = StratifiedKFold(n_splits = k, shuffle = True, random_state = random_state)
-
-    folds_results = {}
-    total_time = 0.0
-    shap_arrays = []
-
-    for fold_idx, (_, test_idx) in enumerate(skf.split(X, y), start = 1):
-        fold_data = data.iloc[test_idx]
-
-        # Randomly subsample within the fold
-        fold_sample = fold_data.sample(n = samples_per_fold, random_state = random_state)
-
-        if verbose:
-            print(f"[INFO] Processing fold {fold_idx} with {len(fold_sample)} samples...")
-
-        fold_result = generate_shap_explanations(
-            model_eval, fold_sample, name = f"fold{fold_idx}",
-            target_col = target_col, random_state = random_state
-        )
-
-        folds_results[f"fold{fold_idx}"] = fold_result
-        shap_arrays.append(fold_result["shap_values"])
-        total_time += fold_result["time_to_explain"]
-
-    # === COMPUTE AVERAGE VALUES ===
-    cross_fold_mean_abs_shap = np.mean(np.abs(np.stack(shap_arrays, axis = 0)[:, :, 1]), axis = 0)
-
-    # === COMBINE RESULTS ===
-    combined_result = {
-        "name": strategy,
-        "folds": folds_results,
-        "cross_fold_mean_absolute_shap_values": cross_fold_mean_abs_shap,
-        "total_time": total_time
-    }
-
-    if verbose:
-        print(f"[INFO] Completed all folds. Total explanation time: {total_time:.2f}s")
-
-    return combined_result
+    return
