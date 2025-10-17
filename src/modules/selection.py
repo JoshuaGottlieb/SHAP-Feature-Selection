@@ -78,7 +78,7 @@ def feature_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
 
         filter_idx = min(
             filter_idx,
-            np.searchsorted(cumsum, sum_threshold * total_shap, side = right), # Index for total contribution
+            np.searchsorted(cumsum, sum_threshold * total_shap, side = 'right'), # Index for total contribution
             n_features if np.all(min_strength_mask) or np.all(~min_strength_mask) else np.argmin(min_strength_mask)
         )
 
