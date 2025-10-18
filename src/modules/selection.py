@@ -1,12 +1,13 @@
-import time
 import os
+import time
+from typing import Any, List, Optional, Tuple, Union
+
 import numpy as np
 import pandas as pd
-from typing import Union, List, Tuple, Optional, Any
-from sklearn.feature_selection import mutual_info_classif
 from fcbf import fcbf
-from ReliefF import ReliefF
 from feature_engine.selection import MRMR
+from ReliefF import ReliefF
+from sklearn.feature_selection import mutual_info_classif
 
 from modules.utils import load_dataset
 
