@@ -32,12 +32,12 @@ def save_object(obj: Any, path: str, compression: Optional[str] = None) -> None:
             Compression type to use ('gzip', 'bz2', 'lzma', or None).
             Defaults to None (uncompressed).
     """
-    # --- Step 1: Ensure the output directory exists ---
+    # Ensure the output directory exists
     root = os.path.dirname(path)
     if root and not os.path.exists(root):
         os.makedirs(root)
 
-    # --- Step 2: Handle supported compression formats ---
+    # Handle supported compression formats
     if compression in ["gzip", "bz2", "lzma"]:
         if compression == "gzip":
             ext = ".pickle.gz"
@@ -53,14 +53,14 @@ def save_object(obj: Any, path: str, compression: Optional[str] = None) -> None:
                 pickle.dump(obj, f)
 
     else:
-        # --- Step 3: Save as an uncompressed pickle file ---
+        # Save as an uncompressed pickle file
         if compression is not None:
             print("Warning: Unknown compression type. Defaulting to uncompressed pickle format.")
         ext = ".pickle"
         with open(path + ext, "wb") as f:
             pickle.dump(obj, f)
 
-    # --- Step 4: Print confirmation ---
+    # Print confirmation
     print(f"Successfully saved object to {path + ext}")
 
     return
@@ -85,7 +85,7 @@ def load_object(path: str) -> Any:
         Any:
             The deserialized Python object.
     """
-    # --- Step 1: Determine compression type based on file extension ---
+    # Determine compression type based on file extension
     if path.endswith(".pickle.gz"):
         compression = "gzip"
     elif path.endswith(".pickle.bz2"):
@@ -95,7 +95,7 @@ def load_object(path: str) -> Any:
     else:
         compression = None
 
-    # --- Step 2: Load object using appropriate method ---
+    # Load object using appropriate method
     if compression == "gzip":
         with gzip.open(path, "rb") as f:
             obj = pickle.load(f)
@@ -109,7 +109,7 @@ def load_object(path: str) -> Any:
         with open(path, "rb") as f:
             obj = pickle.load(f)
 
-    # --- Step 3: Return the loaded Python object ---
+    # Return the loaded Python object
     print(f"Successfully loaded object from {path}")
     
     return obj

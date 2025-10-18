@@ -1,7 +1,6 @@
 import os
 from typing import Dict, List, Tuple, Union
 
-import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -63,7 +62,6 @@ def label_classes(dataset: pd.DataFrame, y: str, label_map: Dict[Union[str, int]
     dataset[y] = dataset[y].map(lambda x: label_map[x])
 
     return dataset
-
 
 def preprocess_dataset(dataset: pd.DataFrame, y: str, categorical_columns: List[str],
                        numeric_columns: List[str], ordinal_columns: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -182,8 +180,8 @@ def preprocess_dataset(dataset: pd.DataFrame, y: str, categorical_columns: List[
 
     return train, test
 
-def save_processed_dataset(train: pd.DataFrame, test: pd.DataFrame, train_path: str, test_path: str,
-                           compression: str = "gzip") -> None:
+def save_processed_dataset(train: pd.DataFrame, test: pd.DataFrame,
+                           train_path: str, test_path: str, compression: str = "gzip") -> None:
     """
     Save processed train and test datasets to disk as compressed CSV files.
 

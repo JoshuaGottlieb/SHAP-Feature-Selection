@@ -10,40 +10,50 @@ from modules.utils import load_object, save_object
 
 def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame,
                                random_state: Optional[int] = None,
-                               batch: slice = None) -> Dict[str, Any]:
+                               batch: Optional[slice] = None) -> Dict[str, Any]:
     """
-    Generate SHAP explanations for a fitted model using the Permutation explainer,
-    excluding the target column from the feature set.
+    Generate SHAP explanations for a fitted model using the Permutation explainer.
+
+    This function computes SHAP values for a given model evaluation function
+    (`model_eval`) using the `shap.PermutationExplainer`. The target column
+    is assumed to be the last column in the dataset and is automatically excluded
+    from the feature set.
 
     Parameters
     ----------
-    model_eval : Any
-        A fitted model evluation method.
+    model_eval : Callable
+        A callable or model evaluation function that accepts feature data
+        and returns predictions (e.g., `model.predict_proba` or `model.predict`).
     data : pd.DataFrame
-        The dataset containing feature columns and a target variable.
-    target_col : str, optional
-        The name of the target column. If not provided, the function assumes
-        the last column in `data` is the target and excludes it automatically.
-    random_state : int, default = None
-        Random seed for reproducibility.
+        The full dataset containing both features and a target column as the last column.
+    random_state : int, optional
+        Random seed for reproducibility of the SHAP permutation process.
+        Default is ``None``.
+    batch : slice, optional
+        Slice object specifying a subset of rows to explain.
+        If ``None``, all rows in the dataset are used for SHAP computation.
 
     Returns
     -------
-    dict
+    Dict[str, Any]
         A dictionary containing:
-        - "name": the provided name
-        - "time_to_explain": the total computation time in seconds
-        - "explanations": the SHAP values as a NumPy array
-        - "expected_values": the expected values from the SHAP explainer
-        - "base_values": the base values from the SHAP results
+        - ``"time"`` : float  
+          Total time (in seconds) taken to compute SHAP explanations.
+        - ``"shap_values"`` : np.ndarray  
+          Computed SHAP values for each feature.
+        - ``"mean_shap"`` : np.ndarray  
+          Mean absolute SHAP value per feature, representing global importance.
 
     Notes
     -----
-    - Uses `shap.explainers.Permutation` to estimate feature importance.
-    - Automatically excludes the target column (by name or position).
-    - Works for classification models supporting `predict_proba()`.
-    - The SHAP values correspond to predicted class probabilities.
-    """   
+    - Uses `shap.explainers.Permutation` for model-agnostic SHAP computation.
+    - The target column (assumed to be last) is automatically excluded from the background
+      and feature data used for explanation.
+    - Supports both regression and classification models, depending on `model_eval`.
+    - If ``batch`` is provided, explanations are computed only for the specified slice
+      of rows, which is useful for large datasets.
+    - The returned mean absolute SHAP values are often used for global feature ranking.
+    """
     
     # Use the full dataset for background
     background_data = data.iloc[:, :-1]

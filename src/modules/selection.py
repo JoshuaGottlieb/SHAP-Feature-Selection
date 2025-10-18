@@ -1,6 +1,6 @@
 import os
 import time
-from typing import Any, List, Optional, Tuple, Union
+from typing import List, Union
 
 import numpy as np
 import pandas as pd
@@ -451,3 +451,5 @@ def run_feature_selection(dataset_names: List[str], k_percentages: List[float],
     fit_metrics = pd.DataFrame(fit_metrics)
     fit_metrics.to_csv(metrics_path, index = False)
     print("[DONE] All feature selection results saved successfully.\n")
+
+    return
