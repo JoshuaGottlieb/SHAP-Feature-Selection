@@ -1,8 +1,10 @@
-from typing import Dict, Any, Union
-from sklearn.pipeline import Pipeline
-from sklearn.model_selection import GridSearchCV
-from sklearn.base import BaseEstimator
+from typing import Any, Dict, Union
+
 import pandas as pd
+from sklearn.base import BaseEstimator
+from sklearn.model_selection import GridSearchCV
+from sklearn.pipeline import Pipeline
+
 from modules.utils import save_object
 
 def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],

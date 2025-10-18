@@ -1,12 +1,13 @@
+import os
+from typing import Dict, List, Tuple, Union
+
 import numpy as np
 import pandas as pd
-import os
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, TargetEncoder
-from sklearn.pipeline import Pipeline
 from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
 from sklearn.model_selection import train_test_split
-from typing import List, Dict, Tuple, Union
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, TargetEncoder
 
 def remove_duplicates_and_columns(dataset: pd.DataFrame, columns_to_drop: List[str] = [],
                                   missingness_threshold: float = 0.5) -> pd.DataFrame:

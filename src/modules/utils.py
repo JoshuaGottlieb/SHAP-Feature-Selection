@@ -1,11 +1,11 @@
-import gzip
 import bz2
+import gzip
 import lzma
-import pickle
 import os
 import pickle
-import pandas as pd
 from typing import Any, Optional
+
+import pandas as pd
 
 def save_object(obj: Any, path: str, compression: Optional[str] = None) -> None:
     """

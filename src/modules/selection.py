@@ -1,7 +1,9 @@
 import os
 import numpy as np
 import pandas as pd
-from typing import Union, List, Optional, Any
+from typing import Union, List, Tuple, Optional, Any
+from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
+from sklearn.utils import check_X_y
 
 def feature_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
                    sum_threshold: float = 1.0, min_strength: float = 0.0,
@@ -158,15 +160,18 @@ def create_feature_selected_dataset(idx: np.ndarray, train: pd.DataFrame, test: 
         print(f"[INFO] Selected {len(idx) - 1} features out of {train.shape[1] - 1} total columns.")
 
     # Construct output file paths
+    if model_type != "":
+        model_type = f'-{model_type}'
+
     reduced_train_path = os.path.join(
         root_dir,
         "train",
-        f"{dataset_name}-train-{model_type}-{selection_strategy}-{selection_threshold}.csv.gz"
+        f"{dataset_name}-train{model_type}-{selection_strategy}-{selection_threshold}.csv.gz"
     )
     reduced_test_path = os.path.join(
         root_dir,
         "test",
-        f"{dataset_name}-test-{model_type}-{selection_strategy}-{selection_threshold}.csv.gz"
+        f"{dataset_name}-test{model_type}-{selection_strategy}-{selection_threshold}.csv.gz"
     )
 
     # Ensure target directories exist

@@ -1,9 +1,11 @@
-import shap
 import os
 import time
+from typing import Any, Callable, Dict, Optional
+
 import numpy as np
 import pandas as pd
-from typing import Any, Dict, Optional, Callable
+import shap
+
 from modules.utils import load_object, save_object
 
 def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame,
