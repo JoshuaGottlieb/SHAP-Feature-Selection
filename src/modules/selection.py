@@ -1,13 +1,18 @@
+import time
 import os
 import numpy as np
 import pandas as pd
 from typing import Union, List, Tuple, Optional, Any
-from sklearn.feature_selection import mutual_info_classif, mutual_info_regression
-from sklearn.utils import check_X_y
+from sklearn.feature_selection import mutual_info_classif
+from fcbf import fcbf
+from ReliefF import ReliefF
+from feature_engine.selection import MRMR
 
-def feature_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
-                   sum_threshold: float = 1.0, min_strength: float = 0.0,
-                   max_threshold: float = 0.0, decay_threshold: float = 0.0) -> np.ndarray:
+from modules.utils import load_dataset
+
+def shap_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
+                sum_threshold: float = 1.0, min_strength: float = 0.0,
+                max_threshold: float = 0.0, decay_threshold: float = 0.0) -> np.ndarray:
     """
     Selects the most relevant feature indices based on SHAP importance values using
     one or more configurable selection strategies.
@@ -188,3 +193,260 @@ def create_feature_selected_dataset(idx: np.ndarray, train: pd.DataFrame, test: 
         print(f"[INFO] Reduced dataset shapes: train = {reduced_train.shape}, test = {reduced_test.shape}\n")
 
     return
+
+def run_shap_selection(dataset_names: List[str], model_types: List[str],
+                       strategies: List[str], sum_thresholds: List[float],
+                       max_thresholds: List[float], train_dir: str, test_dir: str,
+                       explanations_dir: str, save_dir: str) -> None:
+    """
+    Generate feature-selected datasets using SHAP-based feature selection strategies.
+
+    This function loads SHAP explanations for each dataset-model combination,
+    applies multiple feature selection strategies ('sum' and 'max'),
+    and saves reduced datasets based on the selected feature subsets.
+
+    Args:
+        dataset_names (List[str]): Names of datasets to process.
+        model_types (List[str]): Model types (e.g., ['rf', 'xgb', 'logreg']).
+        strategies (List[str]): List of SHAP-based strategies to apply ('sum', 'max').
+        sum_thresholds (List[float]): Thresholds for cumulative SHAP importance ('sum' strategy).
+        max_thresholds (List[float]): Thresholds for maximum SHAP importance ('max' strategy).
+        train_dir (str): Directory containing training datasets.
+        test_dir (str): Directory containing testing datasets.
+        explanations_dir (str): Directory containing SHAP explanation files.
+        save_dir (str): Directory to save reduced feature-selected datasets.
+    """
+
+    # Iterate through each dataset
+    for dataset in dataset_names:
+        # Convert dataset name to snake_case for consistent file paths
+        set_name_snake = dataset.replace('-', '_')
+        print(f"[INFO] Processing dataset: {dataset}")
+
+        # Load preprocessed training and testing splits
+        train = load_dataset(os.path.join(train_dir, f'{set_name_snake}-train.csv.gz'))
+        test = load_dataset(os.path.join(test_dir, f'{set_name_snake}-test.csv.gz'))
+        print(f"[INFO] Loaded training and testing data (train shape: {train.shape}, test shape: {test.shape})")
+
+        # Loop through model types (e.g., RF, XGB, LR)
+        for model_type in model_types:
+            print(f"[INFO] Model type: {model_type}")
+
+            # Load SHAP explanations for this dataset-model pair
+            shap_path = os.path.join(
+                explanations_dir,
+                dataset,
+                f'{set_name_snake}-{model_type}-sampling-global.pickle.xz'
+            )
+
+            try:
+                shap_values = load_object(shap_path)['mean_shap']
+            except Exception as e:
+                print(f"[ERROR] Unable to load SHAP values from: {shap_path} ({e})")
+                continue
+
+            print(f"[INFO] Loaded SHAP values from: {shap_path}")
+            print(f"[INFO] Number of SHAP values: {len(shap_values)}")
+
+            # Loop through feature selection strategies ('sum', 'max')
+            for strategy in strategies:
+                print(f"[INFO] Strategy: {strategy}")
+
+                # Strategy 1: Cumulative SHAP importance ('sum')
+                if strategy == 'sum':
+                    for sum_threshold in sum_thresholds:
+                        print(f"[INFO] Applying 'sum' strategy with threshold = {sum_threshold:.2f}")
+
+                        # Select top features based on cumulative SHAP contribution
+                        idx = shap_select(
+                            shap_values = shap_values,
+                            kind = 'sum',
+                            sum_threshold = sum_threshold
+                        )
+                        print(f"[INFO] Selected {len(idx) - 1} features.")
+
+                        # Save reduced datasets
+                        create_feature_selected_dataset(
+                            idx = idx,
+                            train = train,
+                            test = test,
+                            root_dir = save_dir,
+                            dataset_name = set_name_snake,
+                            model_type = model_type,
+                            selection_strategy = strategy,
+                            selection_threshold = sum_threshold
+                        )
+                        print(f"[DONE] Saved reduced datasets for 'sum' strategy ({sum_threshold:.2f}).\n")
+
+                # Strategy 2: Maximum SHAP threshold ('max')
+                elif strategy == 'max':
+                    for max_threshold in max_thresholds:
+                        print(f"[INFO] Applying 'max' strategy with threshold = {max_threshold:.2f}")
+
+                        # Select top features based on max SHAP magnitude
+                        idx = shap_select(
+                            shap_values = shap_values,
+                            kind = 'max',
+                            max_threshold = max_threshold
+                        )
+                        print(f"[INFO] Selected {len(idx) - 1} features.")
+
+                        # Save reduced datasets
+                        create_feature_selected_dataset(
+                            idx = idx,
+                            train = train,
+                            test = test,
+                            root_dir = save_dir,
+                            dataset_name = set_name_snake,
+                            model_type = model_type,
+                            selection_strategy = strategy,
+                            selection_threshold = max_threshold
+                        )
+                        print(f"[DONE] Saved reduced datasets for 'max' strategy ({max_threshold:.2f}).\n")
+
+        print(f"[DONE] Completed processing for dataset: {dataset}\n")
+
+    return
+
+def run_feature_selection(dataset_names: List[str], k_percentages: List[float],
+                          train_dir: str, test_dir: str, save_dir: str, metrics_dir: str) -> None:
+    """
+    Perform multiple feature selection methods (Mutual Information, ReliefF, MRMR, FCBF)
+    across datasets, generate reduced versions, and record timing metrics.
+
+    Args:
+        dataset_names (List[str]): Names of datasets to process.
+        k_percentages (List[float]): List of feature retention percentages (e.g., [0.25, 0.5, 0.75]).
+        train_dir (str): Directory containing training datasets.
+        test_dir (str): Directory containing testing datasets.        
+        save_dir (str): Directory to save reduced datasets.
+        metrics_dir (str): Directory to save timing metrics summary.
+    """
+    # Initialize list to store timing metrics for feature selection
+    fit_metrics = []
+
+    # Iterate through all datasets
+    for dataset in dataset_names:
+        # Convert dataset name to snake_case for consistent file naming
+        set_name_snake = dataset.replace('-', '_')
+        print(f"[INFO] Processing dataset: {dataset}")
+
+        # Load preprocessed training and testing splits
+        train = load_dataset(os.path.join(train_dir, f'{set_name_snake}-train.csv.gz'))
+        test = load_dataset(os.path.join(test_dir, f'{set_name_snake}-test.csv.gz'))
+        print(f"[INFO] Loaded training and testing data (train shape: {train.shape}, test shape: {test.shape})")
+
+        # Separate features (X) and target (y)
+        X = train.iloc[:, :-1]
+        y = train.iloc[:, -1]
+        p = X.shape[1]  # Number of features
+
+        # Temporary container for per-method feature rankings and timings
+        save_data = []
+
+        # Mutual Information
+        print("[INFO] Computing Mutual Information feature ranking...")
+        t_0 = time.time()
+        mutual_info = mutual_info_classif(X, y, random_state = 42)
+        sorted_idx = np.argsort(mutual_info)[::-1]
+        calc_time = time.time() - t_0
+        save_data.append(('mutual_info', sorted_idx, calc_time))
+        print(f"[DONE] Mutual Information computed in {calc_time:.2f} seconds.")
+
+        # ReliefF
+        print("[INFO] Computing ReliefF feature ranking...")
+        t_0 = time.time()
+        relief = ReliefF(
+            n_neighbors = 3,          # Low neighbor count for efficiency
+            n_features_to_keep = p    # Keep all for sorting later
+        )
+        relief.fit(X.to_numpy(), y.to_numpy())  # ReliefF requires array-like inputs
+        sorted_idx = relief.top_features
+        calc_time = time.time() - t_0
+        save_data.append(('relieff', sorted_idx, calc_time))
+        print(f"[DONE] ReliefF computed in {calc_time:.2f} seconds.")
+
+        # MRMR
+        print("[INFO] Computing MRMR feature ranking...")
+        t_0 = time.time()
+        mrmr = MRMR(
+            method = 'MID',           # Mutual Information Difference
+            max_features = p,         # Keep all for later selection
+            regression = False,       # Classification mode
+            random_state = 42
+        )
+        mrmr.fit(X, y)
+        sorted_idx = np.argsort(mrmr.relevance_)[::-1]
+        calc_time = time.time() - t_0
+        save_data.append(('mrmr', sorted_idx, calc_time))
+        print(f"[DONE] MRMR computed in {calc_time:.2f} seconds.")
+
+        # Generate Reduced Datasets for Mutual Info, ReliefF, MRMR
+        for strategy, sorted_idx, calc_time in save_data:
+            print(f"[INFO] Generating reduced datasets for {strategy}...")
+            for k_percentage in k_percentages:
+                # Compute number of top features to keep
+                k = np.ceil(k_percentage * p).astype(int)
+
+                # Select top-k features + target column
+                idx = np.concatenate([sorted_idx[:k], [p]])
+
+                # Create and save reduced train/test datasets
+                create_feature_selected_dataset(
+                    idx = idx,
+                    train = train,
+                    test = test,
+                    root_dir = save_dir,
+                    dataset_name = set_name_snake,
+                    model_type = "",
+                    selection_strategy = strategy,
+                    selection_threshold = k
+                )
+
+                # Record timing info
+                fit_metrics.append({
+                    'dataset': dataset,
+                    'strategy': strategy,
+                    'k': k,
+                    'time': calc_time
+                })
+
+        # FCBF
+        print("[INFO] Computing FCBF feature ranking...")
+        t_0 = time.time()
+        fcbf_features = fcbf(X, y)[0]  # Returns selected feature names
+        k = len(fcbf_features)
+        sorted_idx = X.columns.get_indexer(fcbf_features)
+        calc_time = time.time() - t_0
+
+        # Select identified features + target
+        idx = np.concatenate([sorted_idx, [p]])
+
+        # Create and save reduced datasets for FCBF
+        create_feature_selected_dataset(
+            idx = idx,
+            train = train,
+            test = test,
+            root_dir = save_dir,
+            dataset_name = set_name_snake,
+            model_type = "",
+            selection_strategy = "fcbf",
+            selection_threshold = k
+        )
+
+        # Record timing info for FCBF
+        fit_metrics.append({
+            'dataset': dataset,
+            'strategy': 'fcbf',
+            'k': k,
+            'time': calc_time
+        })
+        print(f"[DONE] FCBF completed in {calc_time:.2f} seconds.")
+        print(f"[DONE] Completed processing for dataset: {dataset}\n")
+
+    # Save Timing Metrics Summary
+    metrics_path = os.path.join(metrics_dir, 'non_SHAP_fit_statistics.csv')
+    print(f"[INFO] Writing timing metrics to {metrics_path}")
+    fit_metrics = pd.DataFrame(fit_metrics)
+    fit_metrics.to_csv(metrics_path, index = False)
+    print("[DONE] All feature selection results saved successfully.\n")
