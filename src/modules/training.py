@@ -1,6 +1,7 @@
 import os
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, clone
 from sklearn.model_selection import GridSearchCV
@@ -76,91 +77,119 @@ def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],
 def retrain_on_reduced_features(dataset_names: List[str], model_types: List[str],
                                 reduced_datasets: List[str], models_dir: str,
                                 reduced_train_dir: str, selection_parse_mode: str,
+                                selection_frame: Optional[pd.DataFrame],
                                 compression: Optional[str] = 'lzma') -> None:
     """
-    Retrain models on reduced feature subsets for each dataset and model type.
+    Retrain machine learning models on reduced feature subsets.
 
-    Args:
-        dataset_names (List[str]): List of dataset names to process.
-        model_types (List[str]): List of model types (e.g., ['rf', 'xgb']).
-        reduced_datasets (List[str]): Filenames of reduced feature datasets.
-        models_dir (str): Directory where trained models are saved.
-        reduced_train_dir (str): Directory containing reduced training datasets.
-        selection_parse_mode (str): Mode for extracting the feature selection type from filenames.
-            - "train": Extracts using `.split('train-')[-1]`
-            - "model": Extracts using `.split(f'{model_type}-')[-1]`
-        compression (str, optional): Compression type to use ('gzip', 'bz2', 'lzma', or None).
-                                     Defaults to lzma.
+    This function reloads pre-trained models and retrains them using 
+    reduced feature datasets that were generated through various 
+    feature selection methods (e.g., SHAP-based or non-SHAP-based). 
+    It supports flexible parsing of reduced dataset filenames to 
+    extract feature selection metadata and saves the retrained 
+    models for each dataset-model combination.
+
+    Parameters
+    ----------
+    dataset_names : List[str]
+        List of dataset names to process.
+    model_types : List[str]
+        List of model types (e.g., ['rf', 'xgb', 'logreg']).
+    reduced_datasets : List[str]
+        Filenames of the reduced training datasets to use for retraining.
+    models_dir : str
+        Directory where original full models are stored and retrained models will be saved.
+    reduced_train_dir : str
+        Directory containing reduced feature training datasets.
+    selection_parse_mode : str
+        Determines how the feature selection type is extracted from filenames.
+        - "train": Extracts using `.split('train-')[-1]`
+        - "model": Extracts using `.split(f'{model_type}-')[-1]`
+    selection_frame : Optional[pd.DataFrame]
+        Optional DataFrame used when `selection_parse_mode="train"` to 
+        filter reduced datasets based on recorded feature selection metadata.
+        Must include columns: ['dataset', 'model', 'k'].
+    compression : Optional[str], default='lzma'
+        Compression type for saving retrained models.
+        Supported options: 'gzip', 'bz2', 'lzma', or None.
     """
 
     # Loop through all datasets
     for dataset in dataset_names:
-        # Standardize dataset name for consistent file naming
+        # Standardize dataset name for consistent file paths
         set_name_snake = dataset.replace('-', '_')
-        print(f'\n[INFO] Processing dataset: {dataset}')
+        print(f"\n[INFO] Processing dataset: {dataset}")
 
-        # Loop through all model types
+        # Loop through each model type for retraining
         for model_type in model_types:
-            print(f'[INFO] Loading full {model_type} model for {dataset}...')
+            print(f"[INFO] Loading full {model_type} model for {dataset}...")
 
-            # Load the pre-trained full model
+            # Load the original trained model for reference
             model_path = os.path.join(
-                models_dir, dataset, f'{set_name_snake}-{model_type}-full.pickle.xz'
+                models_dir, dataset, f"{set_name_snake}-{model_type}-full.pickle.xz"
             )
             model = load_object(model_path)
 
-            # Identify reduced datasets corresponding to this dataset and model type
+            # Identify reduced datasets corresponding to this dataset-model pair
             if selection_parse_mode == "model":
+                # Filter by dataset and model identifiers in filename
                 filtered_reduced_datasets = [
                     ds for ds in reduced_datasets if set_name_snake in ds and model_type in ds
                 ]
-            else:
+            elif selection_parse_mode == "train":
+                # Filter using feature selection metadata frame
+                k_values = np.sort(selection_frame[
+                                   (selection_frame.dataset == dataset)
+                                   & (selection_frame.model == model_type)
+                                   ].k.unique())
                 filtered_reduced_datasets = [
-                    ds for ds in reduced_datasets if set_name_snake in ds
+                    ds for ds in reduced_datasets
+                    if set_name_snake in ds and int(ds.split('.csv.gz')[0].split('-')[-1]) in k_values
                 ]
-            print(f'[INFO] Found {len(filtered_reduced_datasets)} reduced datasets for {model_type}.')
+            else:
+                raise ValueError(
+                    f"Invalid selection_parse_mode: '{selection_parse_mode}'. "
+                    "Expected 'train' or 'model'."
+                )
 
-            # Retrain the model for each reduced dataset
+            print(f"[INFO] Found {len(filtered_reduced_datasets)} reduced datasets for {model_type}.")
+
+            # Retrain the model on each reduced dataset
             for reduced_dataset in filtered_reduced_datasets:
-                print(f'[INFO] Loading reduced dataset: {reduced_dataset}')
+                print(f"[INFO] Loading reduced dataset: {reduced_dataset}")
 
-                # Load training data
+                # Load reduced training data
                 reduced_train_path = os.path.join(reduced_train_dir, reduced_dataset)
                 reduced_train = load_dataset(reduced_train_path)
                 X_train = reduced_train.iloc[:, :-1]
                 y_train = reduced_train.iloc[:, -1]
 
-                # Extract selection type depending on mode
+                # Determine selection method/type from filename
                 if selection_parse_mode == "train":
                     selection_type = reduced_dataset.split('.csv.gz')[0].split('train-')[-1]
                 elif selection_parse_mode == "model":
                     selection_type = reduced_dataset.split('.csv.gz')[0].split(f'{model_type}-')[-1]
-                else:
-                    raise ValueError(
-                        f"Invalid selection_parse_mode: '{selection_parse_mode}'. "
-                        "Expected 'train' or 'model'."
-                    )
 
-                # Define save path for retrained model
+                # Define save path for the retrained model
                 save_path = os.path.join(
-                    models_dir, dataset, f'{set_name_snake}-{model_type}-{selection_type}'
+                    models_dir, dataset, f"{set_name_snake}-{model_type}-{selection_type}"
                 )
 
-                # Retrain and save the model (no grid search)
-                print(f'[INFO] Retraining {model_type} with selection method: {selection_type}')
+                # Retrain the model using the reduced feature subset (no grid search)
+                print(f"[INFO] Retraining {model_type} with selection method: {selection_type}")
                 fit_model(
                     X_train = X_train,
                     y_train = y_train,
-                    model_name = '',
+                    model_name  ='',
                     model = clone(model),
                     grid_search = False,
                     save = True,
                     save_path = save_path,
-                    compression = 'lzma'
+                    compression = compression
                 )
 
-                print(f'[DONE] {model_type} ({selection_type}) retrained and saved for {dataset}.\n')
+                print(f"[DONE] {model_type} ({selection_type}) retrained and saved for {dataset}.\n")
 
-        print(f'[DONE] Completed retraining for all model types on {dataset}.\n')
+        print(f"[DONE] Completed retraining for all model types on {dataset}.\n")
 
     return
