@@ -4,8 +4,9 @@ from typing import List, Union
 
 import numpy as np
 import pandas as pd
-from feature_engine.selection import MRMR
 from ReliefF import ReliefF
+from skfda.representation.grid import FDataGrid
+from skfda.preprocessing.dim_reduction.variable_selection import MinimumRedundancyMaximumRelevance as MRMR
 from sklearn.feature_selection import mutual_info_classif
 
 from modules.utils import load_dataset, load_object
@@ -393,13 +394,11 @@ def run_feature_selection(dataset_names: List[str], shap_fit_metrics: pd.DataFra
         print("[INFO] Computing MRMR feature ranking...")
         t_0 = time.time()
         mrmr = MRMR(
-            method = 'MID',           # Mutual Information Difference
-            max_features = p,         # Keep all for later selection
-            regression = False,       # Classification mode
-            random_state = 42
+            n_features_to_select = p, # Keep all for later selection
+            method = 'MID'            # Mutual Information Difference
         )
-        mrmr.fit(X, y)
-        sorted_idx = np.argsort(mrmr.relevance_)[::-1]
+        mrmr.fit(FDataGrid(data_matrix = X.to_numpy()), y)
+        sorted_idx = mrmr.get_support(indices = True)
         calc_time = time.time() - t_0
         save_data.append(('mrmr', sorted_idx, calc_time))
         print(f"[DONE] MRMR computed in {calc_time:.2f} seconds.")
@@ -409,7 +408,7 @@ def run_feature_selection(dataset_names: List[str], shap_fit_metrics: pd.DataFra
         # Generate Reduced Datasets for Mutual Info, ReliefF, MRMR
         for strategy, sorted_idx, calc_time in save_data:
             print(f"[INFO] Generating reduced datasets for {strategy}...")
-            for k in shap_metrics_slice.k.unique():
+            for k in sorted(shap_metrics_slice.k.unique()):
                 # Select top-k features + target column
                 idx = np.concatenate([sorted_idx[:k], [p]])
 
