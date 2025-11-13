@@ -1,0 +1,5 @@
+Selection Type,Lowest Overfit Count,Lowest Overfit Mean K %,Max Test Count,Max Test Mean K %,Strongest Peak Count,Strongest Peak Mean K %,Earliest Peak Count,Earliest Peak Mean K %
+SHAP,10,16.42,24,46.21,18,48.42,21,35.94
+Mutual Information,9,37.51,10,54.59,12,55.07,13,33.69
+mRMR,5,21.36,5,75.76,8,61.72,10,38.58
+ReliefF,14,20.18,2,90.0,2,90.0,1,36.36
