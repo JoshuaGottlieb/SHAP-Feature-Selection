@@ -4,6 +4,7 @@ from typing import Dict, Any, Callable, List, Optional, Tuple, Union
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.axes import Axes
 import seaborn as sns
 from matplotlib.ticker import MaxNLocator
 from pandas.io.formats.style import Styler
@@ -20,6 +21,8 @@ from sklearn.metrics import (
     precision_score,
     f1_score
 )
+
+from modules.selection import shap_select
 
 from modules.utils import load_object
 
@@ -259,6 +262,34 @@ def add_fit_time_statistics(results_df: pd.DataFrame, metrics_dir: str) -> pd.Da
     return results_df
 
 # ---- Feature and Statistic Extraction Functions ----
+
+def dataset_model_slice(df: pd.DataFrame, dataset: str, model: str) -> pd.DataFrame:
+    """
+    Filter a DataFrame for a given dataset–model pair and simplify selection labels.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame containing model evaluation or fit statistics.
+    dataset : str
+        Target dataset name.
+    model : str
+        Target model type.
+
+    Returns
+    -------
+    pd.DataFrame
+        Filtered DataFrame with simplified 'selection_type' labels.
+    """
+    # Create a copy of the filtered subset
+    df_slice = df.loc[(df.dataset == dataset) & (df.model == model)].copy()
+
+    # Simplify selection type names (e.g., "mutual_info_50" -> "mutual_info")
+    df_slice.loc[:, "selection_type"] = df_slice["selection_type"].apply(
+        lambda x: "_".join(x.split("_")[:-1]) if "_" in x else x
+    )
+
+    return df_slice
 
 def select_lowest_k(dataframe: pd.DataFrame, groupby_col: str,
                     transform: Callable, include_selection_type: bool = True) -> pd.DataFrame:
@@ -598,6 +629,71 @@ def extract_average_time_data(time_data: pd.DataFrame) -> tuple[pd.DataFrame, pd
     average_shap_time.columns = ['Model Type', 'Average Time (s)']
 
     return average_time_data, average_shap_time
+
+def calculate_shap_counts(results: Dict[str, pd.DataFrame], cv_stats: pd.DataFrame,
+                          metrics_dir: Optional[str] = None) -> pd.DataFrame:
+    """
+    Calculate how many times SHAP-based feature selection appears in each of the
+    result categories (e.g., lowest overfit, max test, strongest peak, earliest peak).
+
+    Optionally saves the resulting summary table to a CSV file when a directory
+    path is provided.
+
+    Args:
+        results (dict): Dictionary mapping result names to DataFrames containing the
+            selected rows (e.g., {'max_test': df, 'strongest_peak': df, ...}).
+        cv_stats (pd.DataFrame): Cross-validation statistics DataFrame used to count
+            occurrences of each selection type.
+        metrics_dir (str, optional): Directory where the output CSV file will be saved.
+            If None, results are returned but not written to disk.
+
+    Returns:
+        pd.DataFrame: A summary table containing SHAP selection type counts across
+            all result categories, with readable labels.
+    """
+
+    shap_counts = pd.DataFrame()
+
+    # Collect SHAP counts for each metric category
+    for metric, frame in results.items():
+        idx = frame[frame['selection_type'] == 'shap'].index.tolist()
+
+        shap_metric_counts = (
+            cv_stats.loc[idx]
+            .value_counts('selection_type')
+            .to_frame(name = metric)
+        )
+
+        shap_counts = (
+            pd.concat([shap_counts, shap_metric_counts], axis = 1)
+            .fillna(0)
+        )
+
+    shap_counts = shap_counts.astype(int).sort_values(
+        'earliest_peak', ascending = False
+    )
+
+    # Final display formatting
+    shap_counts = shap_counts.reset_index()
+    shap_counts['selection_type'] = shap_counts['selection_type'].apply(
+        lambda x: ' = '.join(x.title().split('_'))
+    )
+
+    shap_counts.columns = [
+        'Selection Type',
+        'Lowest Overfit Count',
+        'Max Test Count',
+        'Strongest Peak Count',
+        'Earliest Peak Count'
+    ]
+
+    # Optional saving
+    if metrics_dir is not None:
+        os.makedirs(metrics_dir, exist_ok = True)
+        save_path = os.path.join(metrics_dir, "shap_feature_selection_counts.csv")
+        shap_counts.to_csv(save_path, index = False)
+
+    return shap_counts
 
 # ---- Plotting and Styling Functions ----
 
@@ -956,36 +1052,6 @@ def label_test_dataset(test_stats: pd.DataFrame, results: Dict[str, pd.DataFrame
 
     return ax
 
-# ---- Other (To be organized) ----
-
-def dataset_model_slice(df: pd.DataFrame, dataset: str, model: str) -> pd.DataFrame:
-    """
-    Filter a DataFrame for a given dataset–model pair and simplify selection labels.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame containing model evaluation or fit statistics.
-    dataset : str
-        Target dataset name.
-    model : str
-        Target model type.
-
-    Returns
-    -------
-    pd.DataFrame
-        Filtered DataFrame with simplified 'selection_type' labels.
-    """
-    # Create a copy of the filtered subset
-    df_slice = df.loc[(df.dataset == dataset) & (df.model == model)].copy()
-
-    # Simplify selection type names (e.g., "mutual_info_50" -> "mutual_info")
-    df_slice.loc[:, "selection_type"] = df_slice["selection_type"].apply(
-        lambda x: "_".join(x.split("_")[:-1]) if "_" in x else x
-    )
-
-    return df_slice
-
 def compare_features_performance(cv_slice: pd.DataFrame, test_slice: pd.DataFrame,
                                  dataset: str, model: str,
                                  figsize: Optional[Tuple[int, int]] = (16, 6),
@@ -1155,3 +1221,259 @@ def compare_feature_importances_for_dataset(
         feature_performances.append(feature_performance)
 
     return cv_slices, test_slices, feature_performances
+
+def add_annotation_if_new(ax: Axes, text: str,
+                          xy_position: Tuple[float, float],
+                          annotations: List[Tuple[str, Tuple[float, float], object]]) -> bool:
+    """
+    Add a matplotlib annotation only if an annotation at the same coordinates
+    has not already been recorded.
+
+    Args:
+        ax (matplotlib.axes.Axes): The axis on which the annotation will be drawn.
+        text (str): The label text for the annotation.
+        xy_position (Tuple[float, float]): The (x, y) coordinates for placing the annotation.
+        annotations (List[Tuple[str, Tuple[float, float], object]]):
+            A registry of previously added annotations, stored as
+            (text, position, annotation_object) tuples.
+
+    Returns:
+        bool: True if a new annotation was added; False if the position already exists.
+    """
+
+    # Check whether an annotation at this exact coordinate has already been added.
+    for existing_text, existing_pos, existing_obj in annotations:
+        if existing_pos == xy_position:
+            return False  # Annotation already recorded at this location.
+
+    # Create a new annotation on the axis.
+    ann_obj = ax.annotate(text, xy = xy_position, xytext = xy_position)
+
+    # Store the annotation information so duplicates are prevented later.
+    annotations.append((text, xy_position, ann_obj))
+
+    return True
+
+def annotated_max_shap(dataset: str, model_type: str, model_name: str,
+                       shap_dir: str, results: Dict[str, pd.DataFrame],
+                       stats_frame: pd.DataFrame, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """
+    Generate a plot showing SHAP-based max-threshold feature selection behavior
+    for a single dataset and model, including annotated benchmark points from
+    different best-k strategies.
+
+    This visualization helps compare:
+        * Feature counts selected across SHAP max-thresholds
+        * Best-k results from lowest overfitting, max test score,
+          strongest peak, and earliest peak strategies
+
+    Args:
+        dataset (str): The dataset identifier (e.g., 'kaggle_credit_card_fraud').
+        model_type (str): The model type key used in results and SHAP files
+            (e.g., 'rf', 'logreg').
+        model_name (str): Human-readable model name for plot labeling
+            (e.g., 'Random Forest').
+        shap_dir (str): Directory containing saved SHAP threshold results
+            for the dataset and model.
+        results (Dict[str, pd.DataFrame]): A dictionary of best-k result DataFrames.
+        stats_frame (pd.DataFrame): Full statistics frame used to extract
+            SHAP threshold performance and feature counts.
+        ax (matplotlib.axes.Axes, optional): Axis to draw the plot onto.
+            If None, a new figure and axis are created.
+
+    Returns:
+        matplotlib.axes.Axes: The axis containing the completed SHAP threshold plot.
+    """
+
+    # Load SHAP values for the dataset/model
+    dataset_shap_path = os.path.join(shap_dir, f'{dataset.replace("_", "-")}')
+    shap_file = [p for p in sorted(os.listdir(dataset_shap_path)) if model_type in p][0]
+    shap_values = load_object(os.path.join(dataset_shap_path, shap_file))['mean_shap']
+
+    # Compute SHAP-max selected feature counts for thresholds from 0.005 to 1.0
+    thresholds = np.arange(0.005, 1, 0.005)
+    max_values = [
+        len(shap_select(shap_values = shap_values, kind = 'max', max_threshold = round(t, 3))) - 1
+        for t in thresholds
+    ]
+
+    # Create axis if none provided
+    if ax is None:
+        fig, ax = plt.subplots(figsize = (8, 6))
+
+    colors = sns.color_palette('tab10')[:5]
+    labels = [model_name, 'Lowest Overfitting', 'Max Test', 'Strongest Peak', 'Earliest Peak']
+
+    # Plot SHAP-max curve
+    sns.scatterplot(
+        x = thresholds,
+        y = max_values,
+        color = colors[0],
+        alpha = 0.75,
+        ax = ax,
+        label = labels[0]
+    )
+
+    # Annotation registry
+    annotations = []
+
+    # Loop through best-k result types
+    for i, (metric, frame) in enumerate(results.items()):
+        # Filter to shap-only entries
+        mask = frame[
+            (frame['dataset'] == dataset) &
+            (frame['selection_type'] == 'shap')
+        ].index.tolist()
+
+        sub = stats_frame.loc[mask].copy()
+        if sub.empty:
+            continue
+
+        # Extract SHAP threshold from selection_type naming
+        sub['strategy'] = sub['selection_type'].apply(lambda x: x.split('_')[0])
+        sub['threshold'] = sub['selection_type'].apply(lambda x: float(x.split('_')[1]))
+
+        sub = sub[
+            (sub['strategy'] == 'max') & 
+            (sub['model'] == model_type)
+        ]
+
+        if sub.empty:
+            continue
+
+        # Plot benchmark point
+        sns.scatterplot(
+            data = sub,
+            x = 'threshold',
+            y = 'k',
+            s = 100,
+            color = colors[i + 1],
+            label = labels[i + 1],
+            alpha = 0.75,
+            ax = ax 
+        )
+
+        # Create annotation label
+        text = f'({sub["threshold"].max():.3f}, {sub["k"].max():.0f})'
+        xy_pos = (sub["threshold"].max() + 0.01, sub["k"].max() + 1)
+
+        add_annotation_if_new(ax, text, xy_pos, annotations)
+
+    # Axis labels and title
+    ax.set_xlabel('Max Threshold (Proportion of Strongest Feature)')
+    ax.set_ylabel('K (Number of Features Kept)')
+    ax.set_title(
+        f'Max SHAP Strategy for {" ".join(dataset.split("_")[1:]).title()} Dataset and {model_name}'
+    )
+
+    return ax
+
+def annotated_sum_shap(dataset: str, model_type: str, model_name: str,
+                       shap_dir: str, results: Dict[str, pd.DataFrame],
+                       stats_frame: pd.DataFrame, ax: Optional[plt.Axes] = None) -> plt.Axes:
+    """
+    Plot SHAP-based feature counts derived from the sum strategy,
+    along with annotated points representing selected thresholds
+    found in a cross-validation results frame.
+
+    Args:
+        dataset (str): Name of the dataset to analyze.
+        model_type (str): The model type (e.g., 'rf' or 'xgb').
+        model_name (str): Readable model name for axis titles and labels.
+        shap_dir (str): Base directory containing SHAP values per dataset.
+        results (Dict[str, pd.DataFrame]): Mapping of metric name → results DataFrame.
+        stats_frame (pd.DataFrame): Cross-validation statistics used for annotation.
+        ax (matplotlib.axes.Axes, optional): Optional axis for plotting. If None,
+            a new axis is created.
+
+    Returns:
+        matplotlib.axes.Axes: The axis containing the rendered plot.
+    """
+
+    # Resolve SHAP directory for this dataset
+    dataset_shap_path = os.path.join(shap_dir, dataset.replace("_", "-"))
+    shap_file = [p for p in sorted(os.listdir(dataset_shap_path)) if model_type in p][0]
+
+    shap_values = load_object(
+        os.path.join(dataset_shap_path, shap_file)
+    )["mean_shap"]
+
+    # Compute number of selected features for sum-based SHAP strategy
+    thresholds = np.arange(0.005, 1, 0.005)
+    sum_values = [
+        len(shap_select(shap_values = shap_values, kind = 'sum', sum_threshold = round(t, 3))) - 1
+        for t in thresholds
+    ]
+
+    # Create axis if needed
+    if ax is None:
+        fig, ax = plt.subplots(figsize = (8, 6))
+
+    colors = sns.color_palette('tab10')[:5]
+    labels = [model_name, 'Lowest Overfitting', 'Max Test', 'Strongest Peak', 'Earliest Peak']
+
+    # Plot the SHAP-sum K curve
+    sns.scatterplot(
+        x = thresholds,
+        y = sum_values,
+        color = colors[0],
+        alpha = 0.75,
+        ax = ax,
+        label = labels[0]
+    )
+
+    # Annotation registry
+    annotations = []
+
+    # For each metric, add scatter points and annotations
+    for i, (metric, frame) in enumerate(results.items()):
+        mask = frame[
+            (frame["dataset"] == dataset) &
+            (frame["selection_type"] == "shap")
+        ].index.tolist()
+
+        masked_stats = stats_frame.loc[mask].copy()
+        masked_stats["strategy"] = masked_stats["selection_type"].apply(
+            lambda x: x.split("_")[0]
+        )
+        masked_stats["threshold"] = masked_stats["selection_type"].apply(
+            lambda x: float(x.split("_")[1])
+        )
+
+        # Restrict to sum strategy and the provided model_type
+        subframe = masked_stats[
+            (masked_stats["strategy"] == "sum") &
+            (masked_stats["model"] == model_type)
+        ]
+
+        # Plot the annotation points for cross-validated thresholds
+        sns.scatterplot(
+            data = subframe,
+            x = "threshold",
+            y = "k",
+            s = 100,
+            color = colors[i + 1],
+            alpha = 0.75,
+            ax = ax,
+            label = labels[i + 1]
+        )
+
+        # Add annotation if unique
+        add_annotation_if_new(
+            ax = ax,
+            text = f"({subframe['threshold'].max():.3f}, {subframe['k'].max():.0f})",
+            xy_position = (
+                subframe["threshold"].max() - 0.15,
+                subframe["k"].max() + 1
+            ),
+            annotations = annotations
+        )
+
+    ax.set_xlabel("Sum Threshold (Proportion of Total SHAP Importance)")
+    ax.set_ylabel("K (Number of Features Kept)")
+    ax.set_title(
+        f"Sum SHAP Strategy for {' '.join(dataset.split('_')[1:]).title()} "
+        f"Dataset and {model_name}"
+    )
+
+    return ax

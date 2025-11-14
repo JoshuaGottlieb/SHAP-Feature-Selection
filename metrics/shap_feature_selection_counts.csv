@@ -1,0 +1,13 @@
+Selection Type,Lowest Overfit Count,Max Test Count,Strongest Peak Count,Earliest Peak Count
+Max = 0.01,2,15,10,10
+Sum = 0.8,2,4,7,8
+Max = 0.15,3,2,5,7
+Max = 0.1,7,6,6,5
+Sum = 0.95,2,5,5,5
+Sum = 0.6,4,0,1,4
+Max = 0.5,14,4,3,3
+Max = 0.05,4,10,8,3
+Max = 0.25,4,1,1,2
+Sum = 0.7,1,2,2,2
+Sum = 0.9,1,1,2,1
+Sum = 0.5,6,0,0,0
