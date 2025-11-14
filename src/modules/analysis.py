@@ -318,154 +318,148 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
     """
     Extract optimal 'k' configurations from cross-validation and test statistics.
 
-    This function merges cross-validation and test performance metrics, normalizes
-    selection type names, computes PR-AUC differences (to assess overfitting), and
-    identifies multiple variants of "best k" values:
-      - Lowest overfitting (min PR-AUC difference)
-      - Highest test performance (max PR-AUC)
-      - Strongest local peak in test performance curves
-      - Earliest local peak
+    This function performs the following steps:
 
-    Optionally, results are saved as CSV files in a specified directory.
+    1. Merge cross-validation (CV) and test statistics on shared identifiers
+       ['dataset', 'model', 'selection_type', 'k'].
+    2. Clean and normalize selection type names:
+        - Removes numeric suffixes (e.g., 'mutual_info_50' → 'mutual_info').
+        - Collapses SHAP variants into a single category ('sum' or 'max' → 'shap').
+    3. Compute overfitting metrics:
+        - `pr_auc_diff` = PR-AUC_CV - PR-AUC_test (smaller indicates lower overfitting).
+        - `pr_auc_diff_percent` = pr_auc_diff / PR-AUC_test.
+    4. Compute feature set metrics relative to the full feature set:
+        - `k_percent`: proportion of features used relative to the full set.
+        - `pr_auc_test_percent`: test PR-AUC relative to full-feature test performance.
+    5. Identify "best k" configurations:
+        - Lowest overfitting: configurations minimizing `pr_auc_diff`.
+        - Maximum test performance: configurations maximizing `pr_auc_test`.
+        - Strongest local peak: local maxima in the PR-AUC_test curve, filtered
+          by the 25th percentile threshold.
+        - Earliest peak: among local peaks, the configuration with the lowest `k`.
+    6. Optionally save the resulting DataFrames as CSV files in the specified directory.
 
     Args:
-        cv_stats (pd.DataFrame): DataFrame containing cross-validation metrics,
-            with columns ['dataset', 'model', 'selection_type', 'k', 'pr_auc'].
-        test_stats (pd.DataFrame): DataFrame containing test-set metrics,
-            with matching identifiers and 'pr_auc' values.
-        metrics_dir (str, optional): Directory path to save the output CSVs.
-            If None, results are returned but not saved.
+        cv_stats (pd.DataFrame): Cross-validation results with columns:
+            ['dataset', 'model', 'selection_type', 'k', 'pr_auc'].
+        test_stats (pd.DataFrame): Test set results with matching identifiers and 'pr_auc'.
+        metrics_dir (str, optional): Path to save output CSVs. If None, results are returned
+            but not saved.
 
     Returns:
-        dict[str, pd.DataFrame]: A dictionary with the following keys:
-            - 'lowest_overfit': Rows with lowest PR-AUC difference.
-            - 'max_test': Rows with highest test PR-AUC.
-            - 'strongest_peak': Rows representing the strongest local test PR-AUC peaks.
-            - 'earliest_peak': Rows representing the earliest local test PR-AUC peaks.
+        dict[str, pd.DataFrame]: Dictionary containing the following keys:
+            - 'lowest_overfit': Rows with minimum PR-AUC difference.
+            - 'max_test': Rows with maximum test PR-AUC.
+            - 'strongest_peak': Rows representing strongest local PR-AUC peaks.
+            - 'earliest_peak': Rows representing earliest local peaks.
     """
 
-    # Merge cross-validation and test results by shared identifiers
+    # Merge CV and test data on dataset, model, selection_type, and k
     cv_test = cv_stats.merge(
         test_stats,
-        on = ['dataset', 'model', 'selection_type', 'k'],
-        suffixes = ('_cv', '_test'),
-        how = 'inner'
+        on=['dataset', 'model', 'selection_type', 'k'],
+        suffixes=('_cv', '_test'),
+        how='inner'
     )[
         ['dataset', 'model', 'selection_type', 'k', 'pr_auc_cv', 'pr_auc_test']
     ]
 
-    # Simplify selection type names (e.g., "mutual_info_50" -> "mutual_info")
-    cv_test.loc[:, "selection_type"] = cv_test["selection_type"].apply(
-        lambda x: "_".join(x.split("_")[:-1]) if "_" in x else x
+    # Simplify selection_type names by removing trailing numeric suffixes
+    cv_test["selection_type"] = cv_test["selection_type"].str.replace(
+        r"_[^_]+$", "", regex=True
     )
 
-    # Normalize naming for SHAP-based selections
-    cv_test.selection_type = cv_test.selection_type.replace({'sum': 'shap', 'max': 'shap'})
-
-    # Compute PR-AUC difference between CV and test (smaller = less overfitting)
-    cv_test['pr_auc_diff'] = cv_test['pr_auc_cv'] - cv_test['pr_auc_test']
-
-    # Compute percentage change of PR-AUC between CV and test
-    cv_test['pr_auc_diff_percent'] = cv_test['pr_auc_diff'] / cv_test['pr_auc_test']
-    
-    # Compute percentage of features kept
-    cv_test['k_percent'] = cv_test.apply(
-        lambda row: 100 * row['k'] / cv_test[
-            (cv_test['selection_type'] == 'full') &
-            (cv_test['dataset'] == row['dataset'])
-        ]['k'].max(),
-        axis = 1
+    # Normalize SHAP variants into a single category
+    cv_test["selection_type"] = cv_test["selection_type"].replace(
+        {"sum": "shap", "max": "shap"}
     )
 
-    # Compute percentage of test performance compared to full feature set
-    cv_test['pr_auc_test_percent'] = cv_test.apply(
-        lambda row: 100 * row['pr_auc_test'] / cv_test[
-            (cv_test['selection_type'] == 'full') &
-            (cv_test['dataset'] == row['dataset']) &
-            (cv_test['model'] == row['model'])
-        ]['pr_auc_test'].max(),
-        axis = 1
+    # Compute overfitting metrics
+    cv_test["pr_auc_diff"] = cv_test["pr_auc_cv"] - cv_test["pr_auc_test"]
+    cv_test["pr_auc_diff_percent"] = cv_test["pr_auc_diff"] / cv_test["pr_auc_test"]
+
+    # Vectorized computation of percentage of features kept relative to full feature set
+    full_k = (
+        cv_test[cv_test["selection_type"] == "full"]
+        .groupby("dataset")["k"]
+        .max()
+        .rename("k_full")
     )
+    cv_test = cv_test.merge(full_k, on="dataset", how="left")
+    cv_test["k_percent"] = 100 * cv_test["k"] / cv_test["k_full"]
+    cv_test.drop(columns="k_full", inplace=True)
 
-    # Identify configurations with lowest overfitting
-    lowest_overfit = select_lowest_k(cv_test, groupby_col = 'pr_auc_diff', transform = 'min')
+    # Vectorized computation of PR-AUC test percentage relative to full feature set
+    full_pr_auc = (
+        cv_test[cv_test["selection_type"] == "full"]
+        .groupby(["dataset", "model"])["pr_auc_test"]
+        .max()
+        .rename("full_pr_auc")
+    )
+    cv_test = cv_test.merge(full_pr_auc, on=["dataset", "model"], how="left")
+    cv_test["pr_auc_test_percent"] = 100 * cv_test["pr_auc_test"] / cv_test["full_pr_auc"]
+    cv_test.drop(columns="full_pr_auc", inplace=True)
 
-    # Identify configurations with highest test performance
-    max_test = select_lowest_k(cv_test, groupby_col = 'pr_auc_test', transform = 'max')
+    # Identify best-k configurations by lowest overfitting
+    lowest_overfit = select_lowest_k(cv_test, groupby_col='pr_auc_diff', transform='min')
 
-    # Initialize a DataFrame to collect local performance peaks
-    peak_slice = pd.DataFrame()
+    # Identify best-k configurations by maximum test performance
+    max_test = select_lowest_k(cv_test, groupby_col='pr_auc_test', transform='max')
 
-    # Iterate across datasets, selection types, and models to find local PR-AUC peaks
-    for dataset in cv_test.dataset.unique():
-        idx = []
+    # Identify strongest local peaks in PR-AUC curves
+    peak_slice = []
+    grouped = cv_test.sort_values("k").groupby(["dataset", "selection_type", "model"])
 
-        for s_type in cv_test.selection_type.unique():
-            if s_type == 'full':
-                continue
+    for (dataset, s_type, m_type), sub in grouped:
+        if s_type == "full":
+            continue
 
-            for m_type in cv_test.model.unique():
-                # Subset for one dataset / model / selection_type
-                subframe = cv_test[
-                    (cv_test.dataset == dataset)
-                    & (cv_test.selection_type == s_type)
-                    & (cv_test.model == m_type)
-                ].copy()
+        # 25th percentile threshold for candidate peaks
+        threshold = sub["pr_auc_test"].quantile(0.25)
 
-                if subframe.empty:
-                    continue
+        # Use shifted values to detect local maxima
+        prev_vals = sub["pr_auc_test"].shift(1)
+        next_vals = sub["pr_auc_test"].shift(-1)
 
-                # Calculate 25th percentile threshold for PR-AUC
-                pr_auc_threshold = subframe.pr_auc_test.quantile(0.25)
+        peak_mask = (
+            (sub["pr_auc_test"] > prev_vals) &
+            (sub["pr_auc_test"] > next_vals) &
+            (sub["pr_auc_test"] >= threshold)
+        )
 
-                # Shift test performance to identify local peaks
-                subframe['prev'] = subframe.pr_auc_test.shift(1)
-                subframe['next'] = subframe.pr_auc_test.shift(-1)
+        candidate_idx = sub.index[peak_mask].tolist()
 
-                # Find indices of local peaks above the 25th percentile
-                candidate_idx = subframe[
-                    (subframe.pr_auc_test > subframe.prev)
-                    & (subframe.pr_auc_test > subframe.next)
-                    & (subframe.pr_auc_test >= pr_auc_threshold)
-                ].index.tolist()
+        # Include smallest k if its performance is competitive
+        min_k_idx = sub.nsmallest(1, "k").index[0]
+        if sub.loc[min_k_idx, "pr_auc_test"] > sub.loc[candidate_idx, "pr_auc_test"].max():
+            candidate_idx.append(min_k_idx)
 
-                # Always include the smallest k if its performance is competitive
-                if subframe[subframe.k == subframe.k.min()].pr_auc_test.iloc[0] > any(
-                    subframe.loc[candidate_idx, :].pr_auc_test.values
-                ):
-                    candidate_idx.append(subframe[subframe.k == subframe.k.min()].index[0])
+        # Fallback: if no peaks, select global max PR-AUC
+        if not candidate_idx:
+            max_idx = sub["pr_auc_test"].idxmax()
+            candidate_idx.append(max_idx)
 
-                # If no peaks found, fallback to the global max PR-AUC
-                if not candidate_idx:
-                    candidate_idx.extend(
-                        subframe[subframe.pr_auc_test == subframe.pr_auc_test.max()].index.tolist()
-                    )
+        peak_slice.extend(candidate_idx)
 
-                idx.append(candidate_idx)
+    # Combine identified peaks across all datasets/models
+    peak_slice = cv_test.loc[sorted(set(peak_slice))].copy()
 
-        # Append all identified peaks for the current dataset
-        if idx:
-            peak_slice = pd.concat([peak_slice, cv_test.loc[sorted(sum(idx, [])), :]])
-
-    # Among peaks, select those with the strongest test performance
-    strongest_peak = select_lowest_k(peak_slice, groupby_col = 'pr_auc_test', transform = 'max')
-
-    # Among peaks, select the earliest (lowest k)
-    earliest_peak = select_lowest_k(peak_slice, groupby_col = 'k', transform = 'min')
+    # Among peaks, select strongest (max PR-AUC) and earliest (min k)
+    strongest_peak = select_lowest_k(peak_slice, groupby_col='pr_auc_test', transform='max')
+    earliest_peak = select_lowest_k(peak_slice, groupby_col='k', transform='min')
 
     results = {
-        'lowest_overfit': lowest_overfit,
-        'max_test': max_test,
-        'strongest_peak': strongest_peak,
-        'earliest_peak': earliest_peak,
+        "lowest_overfit": lowest_overfit,
+        "max_test": max_test,
+        "strongest_peak": strongest_peak,
+        "earliest_peak": earliest_peak,
     }
 
-    # Optionally save each results subset as CSV
+    # Save results as CSV files if a metrics directory is provided
     if metrics_dir:
-        os.makedirs(metrics_dir, exist_ok = True)
+        os.makedirs(metrics_dir, exist_ok=True)
         for name, df in results.items():
-            save_path = os.path.join(metrics_dir, f"{name}_best_k.csv")
-            df.to_csv(save_path, index = False)
+            df.to_csv(os.path.join(metrics_dir, f"{name}_best_k.csv"), index=False)
 
     return results
 
@@ -528,7 +522,7 @@ def calculate_performance_counts(results: Dict[str, pd.DataFrame],
         )
 
         # Merge into master performance table
-        performance_counts = pd.concat([performance_counts, df_counts, df_k], axis = 1)
+        performance_counts = pd.concat([performance_counts, df_counts, df_k], axis = 1).fillna(0)
 
     # Clean and format final table
     performance_counts.index.name = 'Selection Type'
@@ -810,6 +804,157 @@ def style_dataframe(df: pd.DataFrame, hide_index: bool = True,
     styled = styled.set_properties(**{'width': cell_width})
 
     return styled
+
+def label_test_dataset(test_stats: pd.DataFrame, results: Dict[str, pd.DataFrame],
+                       dataset: str, model: str, upper_offset: float = 0.05,
+                       lower_offset: float = 0.20, connectionstyles: List[str] = None,
+                       result_indices: List[int] = None, x_offsets: List[float] = None,
+                       y_offsets: List[float] = None, legend_kwargs: Dict[str, Any] = None) -> plt.Axes:
+    """
+    Plot PR AUC versus the number of selected test features for a given dataset–model
+    combination, and annotate specific test results using customizable offsets and
+    connection styles.
+
+    Args:
+        test_stats (pd.DataFrame): DataFrame containing test performance statistics with
+            columns such as ['dataset', 'model', 'selection_type', 'k', 'pr_auc'].
+        results (dict): Dictionary mapping result category names (e.g., 'max_test',
+            'strongest_peak', 'earliest_peak') to DataFrames containing test result slices.
+        dataset (str): Name of the dataset to filter on.
+        model (str): Name of the model to filter on.
+        upper_offset (float, optional): Amount added above the maximum PR AUC to set the
+            plot's upper y-limit. Defaults to 0.05.
+        lower_offset (float, optional): Amount subtracted from the maximum PR AUC to set
+            the plot's lower y-limit. Defaults to 0.20.
+        connectionstyles (List[str], optional): List of connectionstyle strings for the
+            annotation arrows (e.g., ['bar', 'arc3']). If None, defaults are applied.
+        result_indices (List[int], optional): Row indices used to locate the annotated
+            points inside each DataFrame provided in `results`. If None, defaults are
+            applied.
+        x_offsets (List[float], optional): Horizontal offsets applied to each annotation
+            text position. If None, defaults are used.
+        y_offsets (List[float], optional): Vertical offsets applied to each annotation
+            text position. If None, defaults are used.
+        legend_kwargs (dict, optional): Additional keyword arguments forwarded directly
+            to `ax.legend()` to customize the legend appearance.
+
+    Returns:
+        matplotlib.axes.Axes: The axes object containing the styled PR AUC plot.
+    """
+
+    # Default styling lists
+    if connectionstyles is None:
+        connectionstyles = ['bar', 'arc3', 'arc3']
+    if result_indices is None:
+        result_indices = [1, 2, 2]
+    if x_offsets is None:
+        x_offsets = [-1.0, 1.0, 1.0]
+    if y_offsets is None:
+        y_offsets = [-0.05, 0.03, -0.05]
+    if legend_kwargs is None:
+        legend_kwargs = {}
+
+    # Filter relevant rows
+    subframe = dataset_model_slice(
+        df = test_stats,
+        dataset = dataset,
+        model = model
+    )
+
+    subframe.selection_type = subframe.selection_type.replace(
+        {'sum': 'shap', 'max': 'shap'}
+    )
+
+    # Consistent hue and label definitions
+    hue_order = ['full', 'shap', 'mutual_info', 'relieff', 'mrmr']
+    labels = ['Full', 'SHAP', 'Mutual Info', 'ReliefF', 'mRMR']
+
+    # Plot lines and markers
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    sns.lineplot(subframe, x = 'k', y = 'pr_auc', hue = 'selection_type',
+                 hue_order = hue_order, ax = ax)
+    sns.scatterplot(subframe, x = 'k', y = 'pr_auc', hue = 'selection_type',
+                    hue_order = hue_order, ax = ax)
+
+    # Highlight full model point
+    full_color = sns.color_palette('tab10')[0]
+    sns.scatterplot(
+        subframe[subframe.selection_type == 'full'],
+        x = 'k',
+        y = 'pr_auc',
+        color = full_color,
+        s = 50,
+        ax = ax
+    )
+
+    # Mark best observed PR AUC
+    max_score = subframe.pr_auc.max()
+    min_k, max_k = subframe.k.min(), subframe.k.max()
+
+    ax.axhline(y = max_score, linestyle = '--', color = 'black', label = 'Best Score')
+    ax.annotate(
+        f'Best PR AUC: {max_score:.4f}',
+        xy = (min_k + 0.1, max_score + 0.005),
+        fontsize = 10
+    )
+
+    # Legend cleanup and reordering
+    handles, _ = ax.get_legend_handles_labels()
+    num_lines = len(subframe.selection_type.unique())
+
+    ax.legend(
+        labels = labels + ['Best Score'],
+        handles = [handles[num_lines]] + handles[1:num_lines] + [handles[-1]],
+        **legend_kwargs
+    )
+
+    # Annotation labels and categories
+    annotation_labels = [
+        'Max Test Result',
+        'Strongest Peak Result',
+        'Earliest Peak Result'
+    ]
+    result_keys = ['max_test', 'strongest_peak', 'earliest_peak']
+
+    # Add annotations with customizable offsets
+    for label, key, idx, conn, dx, dy in zip(
+        annotation_labels,
+        result_keys,
+        result_indices,
+        connectionstyles,
+        x_offsets,
+        y_offsets
+    ):
+        frame = results[key]
+        d = dataset_model_slice(
+            df = frame,
+            dataset = dataset,
+            model = model
+        ).sort_values('selection_type')
+        row = d.iloc[idx]
+
+        ax.annotate(
+            label,
+            xy = (row['k'], row['pr_auc_test']),
+            xytext = (row['k'] + dx, row['pr_auc_test'] + dy),
+            ha = 'center',
+            size = 10,
+            arrowprops = dict(arrowstyle = '->', connectionstyle = conn, lw = 2)
+        )
+
+    # Axes formatting
+    ax.set_xlabel('K (number of features)')
+    ax.set_ylabel('PR AUC')
+    ax.set_title(
+        f'Test Features vs Test PR AUC | {" ".join(dataset.split("_")[1:]).upper()} | {model.upper()}'
+    )
+
+    upper_pr_auc = subframe.pr_auc.max()
+    ax.set_xlim([min_k - 1, max_k + 1])
+    ax.set_ylim([upper_pr_auc - lower_offset, upper_pr_auc + upper_offset])
+
+    return ax
 
 # ---- Other (To be organized) ----
 
