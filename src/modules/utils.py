@@ -6,6 +6,11 @@ import pickle
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC, SVC
+from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
 def save_object(obj: Any, path: str, compression: Optional[str] = None) -> None:
     """

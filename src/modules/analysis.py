@@ -291,58 +291,123 @@ def dataset_model_slice(df: pd.DataFrame, dataset: str, model: str) -> pd.DataFr
 
     return df_slice
 
-def select_lowest_k(dataframe: pd.DataFrame, groupby_col: str,
-                    transform: Callable, include_selection_type: bool = True) -> pd.DataFrame:
+def select_lowest_k(
+    dataframe: pd.DataFrame,
+    groupby_col: str,
+    transform: Callable,
+    include_selection_type: bool = True,
+    group_cols: list[str] = None,
+) -> pd.DataFrame:
     """
     Select rows with the lowest 'k' value per group after applying a transformation
-    to a grouping column, optionally including 'selection_type' in the grouping.
-
-    This function filters the input DataFrame to exclude entries where
-    'selection_type' == 'full' (if present), applies a specified transformation
-    (e.g., 'min', 'max', 'median') to the specified grouping column, and returns
-    only those rows that both match the transformed group value and have the
-    smallest 'k' for that group.
+    to a grouping column, with flexible grouping columns.
 
     Args:
-        dataframe (pd.DataFrame): Input DataFrame containing at least the columns:
-            ['dataset', 'model', groupby_col, 'k'], and optionally 'selection_type'.
-        groupby_col (str): The column name used for computing the transformation.
-        transform (Callable): A transformation function applied via `groupby().transform()`,
-            such as `min`, `max`, `median`, or a custom callable returning a scalar.
-        include_selection_type (bool, optional): Whether to include 'selection_type' as part
-            of the grouping key. Defaults to True.
+        dataframe (pd.DataFrame):
+            Input DataFrame containing at least the columns in group_cols,
+            plus [groupby_col, 'k'], and optionally 'selection_type'.
+        groupby_col (str):
+            Column name used for the transformation.
+        transform (Callable):
+            Function applied via groupby().transform(), such as min, max,
+            median, or a custom function returning a scalar.
+        include_selection_type (bool, optional):
+            Whether to append 'selection_type' to the grouping keys
+            (if the column exists). Defaults to True.
+        group_cols (list[str], optional):
+            List of columns to group by (default: ['dataset', 'model']).
 
     Returns:
-        pd.DataFrame: A filtered DataFrame containing one row per unique combination of
-        grouping keys (depending on `include_selection_type`) and 'groupby_col' with the
-        smallest 'k' value, after applying the specified transformation.
+        pd.DataFrame:
+            Filtered DataFrame containing one row per grouping combination
+            and groupby_col value with the smallest 'k' after applying
+            the transformation.
     """
-    # Exclude rows where the selection type is 'full' (if column exists)
+
     df = dataframe.copy()
-    if 'selection_type' in df.columns:
-        df = df[df.selection_type != 'full']
 
-    # Define grouping columns based on user preference
-    group_cols = ['dataset', 'model']
-    if include_selection_type and 'selection_type' in df.columns:
-        group_cols.append('selection_type')
+    # Exclude "full" selection_type when present
+    if "selection_type" in df.columns:
+        df = df[df["selection_type"] != "full"]
 
-    # Identify rows where the groupby_col value equals the transformed value within each group
+    # Default grouping columns
+    if group_cols is None:
+        group_cols = ["dataset", "model"]
+
+    # Optionally append selection_type
+    if include_selection_type and "selection_type" in df.columns:
+        group_cols = group_cols + ["selection_type"]
+
+    # Apply transform to the target column within groups
     groupby_mask = (
-        df.groupby(group_cols)[groupby_col].transform(transform) == df[groupby_col]
+        df.groupby(group_cols)[groupby_col].transform(transform)
+        == df[groupby_col]
     )
 
-    # Keep only rows matching the transformed group value
     masked_data = df.loc[groupby_mask]
 
-    # Within each subgroup, select rows with the minimum 'k' value
+    # Select lowest k inside each (group_cols + groupby_col) subgroup
     k_mask = (
-        masked_data.groupby(group_cols + [groupby_col])['k']
-        .transform('min') == masked_data['k']
+        masked_data
+        .groupby(group_cols + [groupby_col])["k"]
+        .transform("min")
+        == masked_data["k"]
     )
 
-    # Drop duplicates to ensure one representative per group and return the filtered DataFrame
     return masked_data.loc[k_mask].drop_duplicates()
+
+# def select_lowest_k(dataframe: pd.DataFrame, groupby_col: str,
+#                     transform: Callable, include_selection_type: bool = True) -> pd.DataFrame:
+#     """
+#     Select rows with the lowest 'k' value per group after applying a transformation
+#     to a grouping column, optionally including 'selection_type' in the grouping.
+
+#     This function filters the input DataFrame to exclude entries where
+#     'selection_type' == 'full' (if present), applies a specified transformation
+#     (e.g., 'min', 'max', 'median') to the specified grouping column, and returns
+#     only those rows that both match the transformed group value and have the
+#     smallest 'k' for that group.
+
+#     Args:
+#         dataframe (pd.DataFrame): Input DataFrame containing at least the columns:
+#             ['dataset', 'model', groupby_col, 'k'], and optionally 'selection_type'.
+#         groupby_col (str): The column name used for computing the transformation.
+#         transform (Callable): A transformation function applied via `groupby().transform()`,
+#             such as `min`, `max`, `median`, or a custom callable returning a scalar.
+#         include_selection_type (bool, optional): Whether to include 'selection_type' as part
+#             of the grouping key. Defaults to True.
+
+#     Returns:
+#         pd.DataFrame: A filtered DataFrame containing one row per unique combination of
+#         grouping keys (depending on `include_selection_type`) and 'groupby_col' with the
+#         smallest 'k' value, after applying the specified transformation.
+#     """
+#     # Exclude rows where the selection type is 'full' (if column exists)
+#     df = dataframe.copy()
+#     if 'selection_type' in df.columns:
+#         df = df[df.selection_type != 'full']
+
+#     # Define grouping columns based on user preference
+#     group_cols = ['dataset', 'model']
+#     if include_selection_type and 'selection_type' in df.columns:
+#         group_cols.append('selection_type')
+
+#     # Identify rows where the groupby_col value equals the transformed value within each group
+#     groupby_mask = (
+#         df.groupby(group_cols)[groupby_col].transform(transform) == df[groupby_col]
+#     )
+
+#     # Keep only rows matching the transformed group value
+#     masked_data = df.loc[groupby_mask]
+
+#     # Within each subgroup, select rows with the minimum 'k' value
+#     k_mask = (
+#         masked_data.groupby(group_cols + [groupby_col])['k']
+#         .transform('min') == masked_data['k']
+#     )
+
+#     # Drop duplicates to ensure one representative per group and return the filtered DataFrame
+#     return masked_data.loc[k_mask].drop_duplicates()
     
 def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
                    metrics_dir: Optional[str] = None) -> dict[str, pd.DataFrame]:
@@ -494,90 +559,192 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
 
     return results
 
-def calculate_performance_counts(results: Dict[str, pd.DataFrame],
-                                 metrics_dir: Optional[str] = None) -> pd.DataFrame:
+# def calculate_performance_counts(results: Dict[str, pd.DataFrame],
+#                                  metrics_dir: Optional[str] = None) -> pd.DataFrame:
+#     """
+#     Compute and summarize performance counts and average k percentages
+#     across multiple result DataFrames, optionally saving the results to CSV.
+
+#     This function iterates over a dictionary of result DataFrames, applying
+#     custom aggregation rules depending on the dataset index:
+#         - For the first dataset, selects entries with the minimum `pr_auc_diff`.
+#         - For subsequent datasets, selects entries with the maximum `pr_auc_test`.
+
+#     The function then counts how many times each feature selection method
+#     appears and computes the mean `k_percent` for each method. The results
+#     are concatenated into a single summary table.
+
+#     Args:
+#         results (Dict[str, pd.DataFrame]): 
+#             Dictionary mapping dataset names (keys) to result DataFrames (values).
+#         metrics_dir (Optional[str], optional): 
+#             Directory path where the resulting summary table should be saved as
+#             `performance_counts.csv`. If None, the file is not saved. Defaults to None.
+
+#     Returns:
+#         pd.DataFrame: 
+#             A DataFrame summarizing counts and mean k percentages per selection type.
+#     """
+#     performance_counts = pd.DataFrame()
+
+#     for i, (name, df) in enumerate(results.items()):
+#         # Define selection criterion depending on dataset order
+#         if i == 0:
+#             groupby_col = 'pr_auc_diff'
+#             transform = 'min'
+#         else:
+#             groupby_col = 'pr_auc_test'
+#             transform = 'max'
+
+#         # Select the best-performing subset per criterion
+#         subframe = select_lowest_k(
+#             df,
+#             groupby_col = groupby_col,
+#             transform = transform,
+#             include_selection_type = False
+#         ).drop_duplicates(subset = groupby_col, keep = False)
+
+#         # Count occurrences of each selection method
+#         df_counts = subframe['selection_type'].value_counts().to_frame(
+#             name = f'{name.replace("_", " ").title()} Count'
+#         )
+
+#         # Compute mean k_percent per selection type
+#         df_k = np.round(
+#             subframe.groupby('selection_type')['k_percent'].mean().to_frame(
+#                 name = f'{name.replace("_", " ").title()} Mean K%'
+#             ),
+#             2
+#         )
+
+#         # Merge into master performance table
+#         performance_counts = pd.concat([performance_counts, df_counts, df_k], axis = 1).fillna(0)
+
+#     # Clean and format final table
+#     performance_counts.index.name = 'Selection Type'
+#     performance_counts = performance_counts.reset_index().sort_values('Selection Type')
+#     performance_counts['Selection Type'] = performance_counts['Selection Type'].replace({
+#         'relieff': 'ReliefF',
+#         'shap': 'SHAP',
+#         'mutual_info': 'Mutual Information',
+#         'mrmr': 'mRMR'
+#     })
+
+#     # Set index for readability
+#     performance_counts = performance_counts.set_index('Selection Type')
+
+#     # Optionally save to CSV
+#     if metrics_dir is not None:
+#         os.makedirs(metrics_dir, exist_ok = True)
+#         save_path = os.path.join(metrics_dir, "performance_counts.csv")
+#         performance_counts.to_csv(save_path, index = True)
+
+#     return performance_counts
+
+def calculate_performance_counts(
+    results: Dict[str, pd.DataFrame],
+    metrics_dir: Optional[str] = None,
+    subset_cols: Union[str, list[str], None] = "selection_type",
+) -> pd.DataFrame:
     """
     Compute and summarize performance counts and average k percentages
     across multiple result DataFrames, optionally saving the results to CSV.
 
-    This function iterates over a dictionary of result DataFrames, applying
-    custom aggregation rules depending on the dataset index:
-        - For the first dataset, selects entries with the minimum `pr_auc_diff`.
-        - For subsequent datasets, selects entries with the maximum `pr_auc_test`.
-
-    The function then counts how many times each feature selection method
-    appears and computes the mean `k_percent` for each method. The results
-    are concatenated into a single summary table.
-
     Args:
-        results (Dict[str, pd.DataFrame]): 
-            Dictionary mapping dataset names (keys) to result DataFrames (values).
-        metrics_dir (Optional[str], optional): 
-            Directory path where the resulting summary table should be saved as
-            `performance_counts.csv`. If None, the file is not saved. Defaults to None.
+        results (Dict[str, pd.DataFrame]):
+            Dictionary mapping dataset names to result DataFrames.
+        metrics_dir (Optional[str], optional):
+            If provided, saves the summary CSV in this directory.
+        subset_cols (str or list[str], optional):
+            Column(s) to use for value_counts and groupby operations.
+            Defaults to 'selection_type'.
 
     Returns:
-        pd.DataFrame: 
-            A DataFrame summarizing counts and mean k percentages per selection type.
+        pd.DataFrame:
+            Summary table with counts and mean k_percent per selection group.
     """
+
+    # Normalize subset_cols to list for consistency
+    if subset_cols is None:
+        subset_cols = "selection_type"
+    # elif isinstance(subset_cols, str):
+    #     subset_cols = [subset_cols]
+
+    group_key = subset_cols  # used for groupby and counts
+
     performance_counts = pd.DataFrame()
 
     for i, (name, df) in enumerate(results.items()):
-        # Define selection criterion depending on dataset order
+        # Select criterion depending on dataset order
         if i == 0:
-            groupby_col = 'pr_auc_diff'
-            transform = 'min'
+            groupby_col = "pr_auc_diff"
+            transform = "min"
         else:
-            groupby_col = 'pr_auc_test'
-            transform = 'max'
+            groupby_col = "pr_auc_test"
+            transform = "max"
 
-        # Select the best-performing subset per criterion
+        # Run lowest-k selection (ignores selection_type grouping)
         subframe = select_lowest_k(
             df,
-            groupby_col = groupby_col,
-            transform = transform,
-            include_selection_type = False
-        ).drop_duplicates(subset = groupby_col, keep = False)
+            groupby_col=groupby_col,
+            transform=transform,
+            include_selection_type=False,
+        ).drop_duplicates(subset=groupby_col, keep=False)
 
-        # Count occurrences of each selection method
-        df_counts = subframe['selection_type'].value_counts().to_frame(
-            name = f'{name.replace("_", " ").title()} Count'
+        # ----- Counts -----
+        df_counts = (
+            subframe[group_key]
+            .value_counts()
+            .to_frame(name=f'{name.replace("_", " ").title()} Count')
         )
 
-        # Compute mean k_percent per selection type
-        df_k = np.round(
-            subframe.groupby('selection_type')['k_percent'].mean().to_frame(
-                name = f'{name.replace("_", " ").title()} Mean K %'
-            ),
-            2
+        # ----- Mean K% -----
+        df_k = (
+            subframe.groupby(group_key)["k_percent"]
+            .mean()
+            .round(2)
+            .to_frame(name=f'{name.replace("_", " ").title()} Mean K%')
         )
 
-        # Merge into master performance table
-        performance_counts = pd.concat([performance_counts, df_counts, df_k], axis = 1).fillna(0)
+        # Merge into master table
+        performance_counts = pd.concat(
+            [performance_counts, df_counts, df_k], axis=1
+        ).fillna(0)
 
-    # Clean and format final table
-    performance_counts.index.name = 'Selection Type'
+    # Clean final table
+    
+    
+    performance_counts = performance_counts.sort_index()
+    # print(performance_counts)
+    performance_counts.index.name = (
+        "Selection Group" if isinstance(group_key, list) else group_key.replace("_", " ").title()
+    )
+    
     performance_counts = performance_counts.reset_index()
-    performance_counts['Selection Type'] = performance_counts['Selection Type'].replace({
-        'relieff': 'ReliefF',
-        'shap': 'SHAP',
-        'mutual_info': 'Mutual Information',
-        'mrmr': 'mRMR'
-    })
+    # print(performance_counts)
 
-    # Sort and set index for readability
-    if 'Max Test Count' in performance_counts.columns:
-        performance_counts = performance_counts.sort_values(['Max Test Count'], ascending = False)
-    performance_counts = performance_counts.set_index('Selection Type')
+    # Rename common selection types (only applies when subset_cols = ['selection_type'])
+    rename_map = {
+        "relieff": "ReliefF",
+        "shap": "SHAP",
+        "mutual_info": "Mutual Information",
+        "mrmr": "mRMR",
+    }
+    if subset_cols == "selection_type":
+        performance_counts['Selection Type'] = \
+            performance_counts['Selection Type'].replace(rename_map)
 
-    # Optionally save to CSV
+    # Re-index after optional name mapping
+    performance_counts = performance_counts.set_index(performance_counts.columns[0])
+
+    # Optional save
     if metrics_dir is not None:
-        os.makedirs(metrics_dir, exist_ok = True)
+        os.makedirs(metrics_dir, exist_ok=True)
         save_path = os.path.join(metrics_dir, "performance_counts.csv")
-        performance_counts.to_csv(save_path, index = True)
+        performance_counts.to_csv(save_path, index=True)
 
     return performance_counts
-
+    
 def extract_average_time_data(time_data: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     """
     Compute average timing statistics for selection types and SHAP models.
@@ -839,68 +1006,446 @@ def custom_scatterplot(data, x: str, y: str, hue: Optional[str] = None,
 
     return ax
 
-def style_dataframe(df: pd.DataFrame, hide_index: bool = True,
-                    format_dict: Optional[dict] = None, cell_width: str = '90px',
-                    index_width: str = '150px') -> Styler:
-    """
-    Apply consistent styling to a DataFrame for display in Jupyter notebooks.
+# def style_dataframe(df: pd.DataFrame, hide_index: bool = True,
+#                     format_dict: Optional[dict] = None, cell_width: str = '90px',
+#                     index_width: str = '150px') -> Styler:
+#     """
+#     Apply consistent styling to a DataFrame for display in Jupyter notebooks.
 
-    Args:
-        df (pd.DataFrame): The DataFrame to style.
-        hide_index (bool, optional): Whether to hide the index column. Defaults to True.
-        format_dict (dict, optional): Dictionary mapping column names to formatting strings
-            (e.g., {'col1': '{:.2f}'}). If None, numeric columns are automatically formatted.
-        cell_width (str, optional): Width of data cells. Defaults to '90px'.
-        index_width (str, optional): Width of index column. Defaults to '150px'.
+#     Args:
+#         df (pd.DataFrame): The DataFrame to style.
+#         hide_index (bool, optional): Whether to hide the index column. Defaults to True.
+#         format_dict (dict, optional): Dictionary mapping column names to formatting strings
+#             (e.g., {'col1': '{:.2f}'}). If None, numeric columns are automatically formatted.
+#         cell_width (str, optional): Width of data cells. Defaults to '90px'.
+#         index_width (str, optional): Width of index column. Defaults to '150px'.
 
-    Returns:
-        pd.io.formats.style.Styler: Styled DataFrame object.
+#     Returns:
+#         pd.io.formats.style.Styler: Styled DataFrame object.
+#     """
+#     styled = df.style.set_table_styles(
+#         [
+#             # Column headers
+#             {'selector': 'th', 'props': [
+#                 ('text-align', 'center'),
+#                 ('color', 'black'),
+#                 # ('border', '1px solid black'),
+#                 ('border-bottom', '1px solid black'),
+#                 # ('border-top', '1px solid black'),
+#                 # ('border-right', '1px solid black'),
+#                 ('background-color', 'white'),
+#                 ('font-size', '12px'),
+#                 ('font-weight', 'bold')
+#             ]},
+#             # Index column (row header)
+#             {'selector': 'th.row_heading', 'props': [
+#                 ('text-align', 'center'),
+#                 ('width', index_width),
+#                 # ('border', '1px solid black'),
+#                 # ('border-top', '1px solid black'),
+#                 ('border-right', '1px solid black'),
+#                 ('background-color', 'white'),
+#                 ('color', 'black')
+#             ]},
+#             # Data cells
+#             {'selector': 'td', 'props': [
+#                 ('text-align', 'center'),
+#                 ('color', 'black'),
+#                 # ('border', '1px solid black'),
+#                 # ('border-bottom', '1px solid black'),
+#                 # ('border-right', '1px solid black'),
+#                 ('background-color', 'white'),
+#                 ('width', cell_width),
+#                 ('font-size', '12px'),
+#                 ('font-weight', 'bold')
+#             ]}
+#         ]
+#     )
+#     if format_dict:
+#         styled = styled.format(format_dict)
+
+#     if hide_index:
+#         styled = styled.hide(axis = 'index')
+
+#     styled = styled.set_properties(**{'width': cell_width})
+
+#     return styled
+
+def style_dataframe(
+    df: pd.DataFrame,
+    hide_index: bool = True,
+    format_dict: Optional[dict] = None,
+    cell_width: str = '90px',
+    index_width: str = '150px',
+    alternate_rows: bool = False,
+    alt_color_1: str = "#ffffff",
+    alt_color_2: str = "#f5f5f5",
+    header_bg: str = "#e6e6e6",
+    header_font_color: str = "black",
+) -> Styler:
     """
+    Apply consistent styling to a DataFrame for display in Jupyter notebooks,
+    with optional alternating row background colors and unified header styling
+    for standard headers and MultiIndex headers.
+    """
+
+    def _alternate_row_bg_full(df_in: pd.DataFrame) -> pd.DataFrame:
+        """Create DataFrame of style strings for row-wise alternating backgrounds."""
+        n_rows, n_cols = df_in.shape
+        bg = pd.DataFrame('', index=df_in.index, columns=df_in.columns)
+        for i in range(n_rows):
+            color = alt_color_1 if (i % 2) == 0 else alt_color_2
+            bg.iloc[i, :] = f'background-color: {color}'
+        return bg
+
     styled = df.style.set_table_styles(
         [
-            # Index column (row header)
-            {'selector': 'th.row_heading', 'props': [
-                ('text-align', 'center'),
-                ('width', index_width),
-                ('border-top', '1px solid black'),
-                ('border-right', '1px solid black'),
-                ('background-color', 'white'),
-                ('color', 'black')
-            ]},
-            # Column headers
+            # GENERAL TH — applies to *all* header cells including MultiIndex
             {'selector': 'th', 'props': [
                 ('text-align', 'center'),
-                ('color', 'black'),
-                ('border-bottom', '1px solid black'),
-                ('border-top', '1px solid black'),
-                ('border-right', '1px solid black'),
-                ('background-color', 'white'),
+                ('color', header_font_color),
+                ('background-color', header_bg),
                 ('font-size', '12px'),
-                ('font-weight', 'bold')
+                ('font-weight', 'bold'),
             ]},
+
+            # Column header cells (more specific, overrides general th)
+            {'selector': 'th.col_heading', 'props': [
+                ('border-bottom', '1px solid black'),
+            ]},
+
+            # Row index header cells
+            {'selector': 'th.row_heading', 'props': [
+                ('width', index_width),
+                ('border-right', '1px solid black'),
+            ]},
+
             # Data cells
             {'selector': 'td', 'props': [
                 ('text-align', 'center'),
                 ('color', 'black'),
-                ('border-bottom', '1px solid black'),
-                ('border-right', '1px solid black'),
-                ('background-color', 'white'),
+                # ('background-color', 'white'),
                 ('width', cell_width),
                 ('font-size', '12px'),
-                ('font-weight', 'bold')
-            ]}
+                ('font-weight', 'bold'),
+            ]},
         ]
     )
+
+    # Formatting
     if format_dict:
         styled = styled.format(format_dict)
 
+    # Hide index if requested
     if hide_index:
-        styled = styled.hide(axis = 'index')
+        styled = styled.hide(axis='index')
 
+    # Apply alternating row backgrounds
+    if alternate_rows:
+        styled = styled.apply(_alternate_row_bg_full, axis=None)
+
+    # Ensure widths apply
     styled = styled.set_properties(**{'width': cell_width})
 
     return styled
 
+
+# def style_dataframe(
+#     df: pd.DataFrame,
+#     hide_index: bool = True,
+#     format_dict: Optional[dict] = None,
+#     cell_width: str = "90px",
+#     index_width: str = "150px",
+#     alternate_rows: bool = False,
+#     striped_cols: Optional[list] = None,
+#     striped_index_level: Optional[Union[int, str]] = None,
+#     alt_color_1: str = "#ffffff",
+#     alt_color_2: str = "#f5f5f5",
+#     header_bg: str = "#e6e6e6",
+#     header_font_color: str = "black",
+# ) -> Styler:
+#     """
+#     Style a DataFrame with optional alternating row shading, optionally applying
+#     alternating shading to a specific level of a MultiIndex.
+
+#     Args:
+#         striped_cols (list, optional):
+#             Columns to apply striping to. If None, all columns are striped.
+#         striped_index_level (int or str, optional):
+#             MultiIndex level (by integer position or name) to use for row striping.
+#             If None, index is not striped separately.
+#     """
+
+#     # Determine column mask for striping
+#     if striped_cols is None:
+#         col_mask = pd.Series(True, index=df.columns)
+#     else:
+#         col_mask = pd.Series(False, index=df.columns)
+#         for col in striped_cols:
+#             if col in df.columns:
+#                 col_mask.loc[col] = True
+#             else:
+#                 raise KeyError(f"Column '{col}' not found in DataFrame.columns.")
+
+#     def _alternate_row_styles(data: pd.DataFrame) -> pd.DataFrame:
+#         """Generate CSS for alternating row colors on selected columns."""
+#         styles = pd.DataFrame("", index=data.index, columns=data.columns)
+
+#         if striped_index_level is not None and isinstance(data.index, pd.MultiIndex):
+#             # Compute stripe colors based on unique values in the given level
+#             if isinstance(striped_index_level, int):
+#                 level_vals = data.index.get_level_values(striped_index_level)
+#             else:
+#                 level_vals = data.index.get_level_values(striped_index_level)
+
+#             # Track alternating blocks per unique value
+#             unique_vals = pd.Series(level_vals).factorize()[0]  # 0,1,2,...
+#             for i, idx in enumerate(data.index):
+#                 bg = alt_color_1 if (unique_vals[i] % 2 == 0) else alt_color_2
+#                 for col in data.columns:
+#                     if col_mask[col]:
+#                         styles.at[idx, col] = f"background-color: {bg}"
+#         else:
+#             # Default: stripe by row index
+#             for i, idx in enumerate(data.index):
+#                 bg = alt_color_1 if (i % 2 == 0) else alt_color_2
+#                 for col in data.columns:
+#                     if col_mask[col]:
+#                         styles.at[idx, col] = f"background-color: {bg}"
+
+#         return styles
+
+#     # Base styles
+#     styled = df.style.set_table_styles(
+#         [
+#             {"selector": "th", "props": [
+#                 ("background-color", header_bg),
+#                 ("color", header_font_color),
+#                 ("font-size", "12px"),
+#                 ("font-weight", "bold"),
+#                 ("text-align", "center"),
+#             ]},
+#             {"selector": "th.col_heading", "props": [("border-bottom", "1px solid black")]},
+#             {"selector": "th.row_heading", "props": [
+#                 ("width", index_width),
+#                 ("border-right", "1px solid black"),
+#                 ("text-align", "center"),
+#             ]},
+#             {"selector": "td", "props": [
+#                 ("text-align", "center"),
+#                 ("color", "black"),
+#                 # ("background-color", "white"),
+#                 ("width", cell_width),
+#                 ("font-size", "12px"),
+#                 ("font-weight", "bold"),
+#             ]},
+#         ]
+#     )
+
+#     if format_dict:
+#         styled = styled.format(format_dict)
+
+#     if alternate_rows:
+#         styled = styled.apply(_alternate_row_styles, axis=None)
+
+#     if hide_index:
+#         styled = styled.hide(axis="index")
+
+#     styled = styled.set_properties(**{"width": cell_width})
+
+#     return styled
+
+
+
+
+
+# def style_dataframe(
+#     df: pd.DataFrame,
+#     hide_index: bool = True,
+#     format_dict: Optional[dict] = None,
+#     cell_width: str = '90px',
+#     index_width: str = '150px',
+#     alternate_rows: bool = False,
+#     alt_color_1: str = "#ffffff",
+#     alt_color_2: str = "#f5f5f5",
+#     header_bg: str = "#e6e6e6",
+#     header_font_color: str = "black",
+# ) -> Styler:
+#     """
+#     Apply consistent styling to a DataFrame for display in Jupyter notebooks,
+#     with optional alternating row background colors and unified header styling
+#     for both column headers and index headers.
+
+#     Args:
+#         df (pd.DataFrame): The DataFrame to style.
+#         hide_index (bool, optional): Whether to hide the index column. Defaults to True.
+#         format_dict (dict, optional): Formatting rules for columns.
+#         cell_width (str, optional): Width of data cells.
+#         index_width (str, optional): Width of index column.
+#         alternate_rows (bool, optional): Enable alternating row colors.
+#         alt_color_1 (str, optional): Background for even rows.
+#         alt_color_2 (str, optional): Background for odd rows.
+#         header_bg (str, optional): Background color for *all* header cells.
+#         header_font_color (str, optional): Text color for header labels.
+
+#     Returns:
+#         Styler: Styled DataFrame.
+#     """
+
+#     def _alternate_row_colors(row):
+#         """Return row-level background color instructions."""
+#         color = alt_color_1 if row.name % 2 == 0 else alt_color_2
+#         return [f"background-color: {color}"] * len(row)
+
+#     styled = df.style.set_table_styles(
+#         [
+#             # Column headers
+#             {'selector': 'th.col_heading', 'props': [
+#                 ('text-align', 'center'),
+#                 ('color', header_font_color),
+#                 ('background-color', header_bg),
+#                 ('border-bottom', '1px solid black'),
+#                 ('font-size', '12px'),
+#                 ('font-weight', 'bold'),
+#             ]},
+#             # Index header (row index label)
+#             {'selector': 'th.row_heading', 'props': [
+#                 ('text-align', 'center'),
+#                 ('width', index_width),
+#                 ('border-right', '1px solid black'),
+#                 ('color', header_font_color),
+#                 ('background-color', header_bg),   # <<< MATCH COLUMN HEADER STYLE
+#                 ('font-size', '12px'),
+#                 ('font-weight', 'bold'),
+#             ]},
+#             # Data cells
+#             {'selector': 'td', 'props': [
+#                 ('text-align', 'center'),
+#                 ('color', 'black'),
+#                 ('background-color', 'white'),
+#                 ('width', cell_width),
+#                 ('font-size', '12px'),
+#                 ('font-weight', 'bold'),
+#             ]},
+#         ]
+#     )
+
+#     if format_dict:
+#         styled = styled.format(format_dict)
+
+#     if hide_index:
+#         styled = styled.hide(axis='index')
+
+#     # Alternating row colors
+#     if alternate_rows:
+#         styled = styled.apply(_alternate_row_colors, axis=1)
+
+#     styled = styled.set_properties(**{'width': cell_width})
+
+#     return styled
+    
+def style_pivot(
+    dataframe: pd.DataFrame,
+    index: str,
+    columns: str,
+    values: str,
+    aggregation: Union[str, callable] = "mean",
+    column_labels: Optional[list] = None,
+    index_labels: Optional[list] = None,
+    hide_index: bool = True,
+    precision: str = "{:.4f}",
+    cell_width: str = "120px",
+    caption: Optional[str] = None,
+) -> pd.io.formats.style.Styler:
+    """
+    Create a pivot table with custom labels and apply consistent styling with style_dataframe.
+
+    Args:
+        dataframe (pd.DataFrame):
+            Source DataFrame.
+        index (str):
+            Column to use as pivot index.
+        columns (str):
+            Column to use for pivot columns.
+        values (str):
+            Column providing cell values.
+        aggregation (str or callable, optional):
+            Aggregation applied before pivoting. Defaults to "mean".
+        column_labels (list, optional):
+            Ordered list of labels for output pivot columns. If provided,
+            replaces pivot.columns.
+        index_labels (list, optional):
+            Ordered list of labels for output pivot index.
+        hide_index (bool, optional):
+            Whether to hide index column when styling. Defaults to True.
+        precision (str, optional):
+            Formatting string for numeric columns (e.g. '{:.4f}').
+        cell_width (str, optional):
+            Width for data columns. Defaults to "120px".
+        caption (str, optional):
+            Caption string to add to the styled table.
+
+    Returns:
+        pd.io.formats.style.Styler:
+            The styled DataFrame.
+    """
+
+    # ---- Build pivot table ----
+    pivot = (
+        dataframe.groupby([index, columns])[values]
+        .agg(aggregation)
+        .to_frame()
+        .reset_index()
+        .pivot(index = index, columns = columns, values = values)
+    )
+
+    # Replace columns if labels provided
+    if column_labels is not None:
+        pivot.columns = column_labels
+
+    # Replace index if labels provided
+    if index_labels is not None:
+        pivot.index = index_labels
+
+    pivot.index.name = ""
+
+    # ---- Build formatting dict ----
+    format_dict = {col: precision for col in pivot.columns}
+
+    # ---- Style using helper ----
+    styled = style_dataframe(
+        df = pivot.reset_index(),
+        hide_index = hide_index,
+        format_dict = format_dict,
+        cell_width = cell_width,
+        alternate_rows = True
+    )
+
+    # Add left-column border for separating label column
+    styled = styled.set_properties(
+        subset = [""],
+        **{"border-right": "1px solid black"},
+    )
+
+    # Add caption styling if provided
+    if caption is not None:
+        styled = styled.set_caption(caption).set_table_styles(
+            [
+                {
+                    "selector": "caption",
+                    "props": [
+                        ("color", "black"),
+                        ("font-size", "16px"),
+                        ("font-weight", "bold"),
+                        ("background-color", "white"),
+                    ],
+                }
+            ],
+            overwrite = False,
+        )
+
+    return styled
+    
 def label_test_dataset(test_stats: pd.DataFrame, results: Dict[str, pd.DataFrame],
                        dataset: str, model: str, upper_offset: float = 0.05,
                        lower_offset: float = 0.20, connectionstyles: List[str] = None,
