@@ -1,0 +1,108 @@
+\documentclass[11pt]{article} %
+\usepackage[letterpaper, margin=1in]{geometry}
+\usepackage{graphicx,amssymb} %
+\usepackage{epstopdf}
+\usepackage{amsmath}
+\usepackage{fancyhdr}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+% \usepackage{algcompatible}
+ 
+
+%\pagestyle{empty} %
+
+\pagestyle{fancyplain}
+\fancyhf{}
+%\fancyheadoffset{0in}
+
+\setcounter{page}{1}
+\renewcommand{\thepage}{A-\arabic{page}}
+
+
+\rhead{December 5, 2025}
+\lhead{Seidenberg Annual Research Day 2025}
+
+\cfoot{\thepage}
+
+
+\newsavebox{\algleft}
+\newsavebox{\algright}
+
+
+\savebox{\algleft}{
+\begin{minipage}{0.48\textwidth}
+    \begin{algorithm}[H]
+        \caption{\\SUM SHAP Pseudocode}
+        \begin{algorithmic}
+        \small
+        \STATE Sort the mean absolute SHAP values $I_j$ in descending order: $I_j \geq I_{j+1}$
+            \STATE Calculate the total sum $S = \sum I_j$
+            \STATE Define a proportion constant $r$ in [0, 1].
+            \STATE Initialize a running sum $s$ and an index $j = 0$.
+            \WHILE{$s < r \cdot S$}
+                \STATE Add $I_j$ to $s$ and increment $j$
+            \ENDWHILE
+            \RETURN $[f_0, \ldots, f_j]$, the selected sorted features.
+        \end{algorithmic}
+    \end{algorithm}
+\end{minipage}}
+\savebox{\algright}{
+\begin{minipage}{0.48\textwidth}
+    \begin{algorithm}[H]
+        \caption{\\MAX SHAP Psuedocode}
+        \begin{algorithmic}
+        \small
+        \STATE Sort the mean absolute SHAP values $I_j$ in descending order: $I_j \geq I_{j+1}$
+            \STATE Choose $M = \max(I_j) = I_0$
+            \STATE Define a proportion constant $\rho$ in [0, 1].
+            \STATE Initialize an index $j = 0$.
+            \WHILE{$I_j \geq \rho \cdot M$}
+                \STATE Increment $j$
+            \ENDWHILE
+            \RETURN $[f_0, \ldots, f_j]$, the selected sorted features.
+        \end{algorithmic}
+    \end{algorithm}
+\end{minipage}}
+
+
+\begin{document}
+
+
+% Authors
+
+\title{Using SHAP Post-Model Explainability\\ as a Model-Agnostic Feature Selection Technique}
+
+
+\author{Joshua Gottlieb$^1$, Martin Sichali Chunsen$^1$, and Alexander Yoo$^1$, advised by Dr. Krishna Bathula$^1$
+       \\
+       $^1$Seidenberg School of CSIS, University of Pace, New York City,
+       NY, USA\\
+       jg05394n@pace.edu, cs83339n@pace.edu, ay71173n@pace.edu, kbathula@pace.edu\\ 
+ }
+
+%%% if all authors from the same institute
+%\author{F. Author, S. Author, and T. Author,
+%       \\
+%Computer Science Department, University of XYZ, Machine City, 
+%       NY, USA\\
+%       \{author1,author2,author3\}@email.edu\\ 
+% }
+
+
+\date{}
+
+
+\maketitle
+Feature selection techniques in data science help reduce dimensionality of datasets, remove sparsity, and eliminate noisy patterns, thereby improving generalization of models to future data. Many feature selection techniques fail to optimize for the predictive power of the model, require iterating through the extensive feature space, or apply only to certain model types \cite{Chandrashekar2014}. SHAP values focus on capturing the predictive power of each feature within the context of the trained model in order to provide explainability. Because SHAP treats the model as a black box, the SHAP technique is model agnostic. In this paper, we employ SHAP values to capture and rank the important features learned by a model and to use these rankings for feature selection. We build upon prior work using SHAP as a feature selection technique \cite{Marcilio2020} by creating the MAX and SUM selection algorithms, which are designed to align with intuitive feature selection goals without the requirement for costly iterative processes. We validate the effectiveness of our SUM and MAX SHAP selection algorithms by testing their performance with five machine learning models using ten diverse datasets, demonstrating that these SHAP selection strategies produce equivalent or superior model performance and greater feature reduction compared to other state-of-the-art techniques.
+
+\noindent\usebox{\algleft}\hfill\usebox{\algright}%
+
+
+\begin{thebibliography}{9}
+ 
+\bibitem{Chandrashekar2014} G. Chandrashekar and F. Sahin, “A survey on feature selection methods,” Computers \& Electrical Engineering, vol. 40, no. 1, pp. 16–28, 2014, 40th-year commemorative issue.
+
+\bibitem{Marcilio2020} W. E. Marcílio and D. M. Eler, “From explanations to feature selection: Assessing SHAP values as feature selection mechanism,” in Proc. 33rd SIBGRAPI Conf. Graph., Patterns Images (SIBGRAPI), Porto de Galinhas, Brazil, 2020, pp. 340–347, doi: 10.1109/SIBGRAPI51738.2020.00053.
+
+\end{thebibliography} 
+\end{document}
