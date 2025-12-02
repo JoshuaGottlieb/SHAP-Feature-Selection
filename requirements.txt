@@ -8,4 +8,5 @@ ReliefF==0.1.2
 scikit-fda==0.10.1
 scikit-learn==1.6.1
 seaborn==0.13.2
+shap==0.47.1
 xgboost==2.1.4
