@@ -9,11 +9,19 @@ from sklearn.pipeline import Pipeline
 
 from modules.utils import load_dataset, load_object, save_object
 
-def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],
-              model_name: str, model: BaseEstimator, grid_search: bool = False,
-              param_grid: Dict[str, Any] = {}, cv: int = 5, random_state: int = 42,
-              save: bool = True, save_path: str = './models/temp_model.pickle',
-              compression = None) -> Union[Pipeline, GridSearchCV]:
+def fit_model(
+    X_train: pd.DataFrame,
+    y_train: Union[pd.Series, pd.DataFrame],
+    model_name: str,
+    model: BaseEstimator,
+    grid_search: bool = False,
+    param_grid: Dict[str, Any] = {},
+    cv: int = 5,
+    random_state: int = 42,
+    save: bool = True,
+    save_path: str = './models/temp_model.pickle',
+    compression = None
+) -> Union[Pipeline, GridSearchCV]:
     """
     Fit a machine learning model (optionally with grid search) and save it.
 
@@ -74,44 +82,41 @@ def fit_model(X_train: pd.DataFrame, y_train: Union[pd.Series, pd.DataFrame],
     
     return full_model
 
-def retrain_on_reduced_features(dataset_names: List[str], model_types: List[str],
-                                reduced_datasets: List[str], models_dir: str,
-                                reduced_train_dir: str, selection_parse_mode: str,
-                                selection_frame: Optional[pd.DataFrame],
-                                compression: Optional[str] = 'lzma') -> None:
+def retrain_on_reduced_features(
+    dataset_names: List[str],
+    model_types: List[str],
+    reduced_datasets: List[str],
+    models_dir: str,
+    reduced_train_dir: str,
+    selection_parse_mode: str,
+    selection_frame: Optional[pd.DataFrame],
+    compression: Optional[str] = 'lzma'
+) -> None:
     """
-    Retrain machine learning models on reduced feature subsets.
-
-    This function reloads pre-trained models and retrains them using 
-    reduced feature datasets that were generated through various 
-    feature selection methods (e.g., SHAP-based or non-SHAP-based). 
-    It supports flexible parsing of reduced dataset filenames to 
-    extract feature selection metadata and saves the retrained 
-    models for each dataset-model combination.
-
-    Parameters
-    ----------
-    dataset_names : List[str]
-        List of dataset names to process.
-    model_types : List[str]
-        List of model types (e.g., ['rf', 'xgb', 'logreg']).
-    reduced_datasets : List[str]
-        Filenames of the reduced training datasets to use for retraining.
-    models_dir : str
-        Directory where original full models are stored and retrained models will be saved.
-    reduced_train_dir : str
-        Directory containing reduced feature training datasets.
-    selection_parse_mode : str
-        Determines how the feature selection type is extracted from filenames.
-        - "train": Extracts using `.split('train-')[-1]`
-        - "model": Extracts using `.split(f'{model_type}-')[-1]`
-    selection_frame : Optional[pd.DataFrame]
-        Optional DataFrame used when `selection_parse_mode="train"` to 
-        filter reduced datasets based on recorded feature selection metadata.
-        Must include columns: ['dataset', 'model', 'k'].
-    compression : Optional[str], default='lzma'
-        Compression type for saving retrained models.
-        Supported options: 'gzip', 'bz2', 'lzma', or None.
+    Retrain machine learning models on reduced feature subsets.  
+    Reloads pre-trained models and retrains them using reduced feature datasets generated
+    through various feature selection methods (e.g., SHAP-based or non-SHAP-based). Supports
+    flexible parsing of reduced dataset filenames to extract feature selection metadata and
+    saves retrained models for each dataset-model combination.
+    
+    Args:
+        dataset_names (List[str]): List of dataset names to process.
+        model_types (List[str]): List of model types (e.g., ['rf', 'xgb', 'logreg']).
+        reduced_datasets (List[str]): Filenames of the reduced training datasets to use
+            for retraining.
+        models_dir (str): Directory where original full models are stored and retrained
+            models will be saved.
+        reduced_train_dir (str): Directory containing reduced feature training datasets.
+        selection_parse_mode (str): Determines how the feature selection type is extracted
+            from filenames:
+            - "train": Extracts using `.split('train-')[-1]`.
+            - "model": Extracts using `.split(f'{model_type}-')[-1]`.
+        selection_frame (Optional[pd.DataFrame], optional): Optional DataFrame used when
+            `selection_parse_mode="train"` to filter reduced datasets based on recorded
+            feature selection metadata. Must include columns: ['dataset', 'model', 'k'].
+            Defaults to None.
+        compression (Optional[str], optional): Compression type for saving retrained models.
+            Supported options: 'gzip', 'bz2', 'lzma', or None. Defaults to 'lzma'.
     """
 
     # Loop through all datasets

@@ -5,14 +5,21 @@ from typing import List, Union
 import numpy as np
 import pandas as pd
 from ReliefF import ReliefF
+from skfda.preprocess.dim_reduction.variable_selection import (
+    MinimumRedundancyMaximumRelevance as MRMR,
+)
 from skfda.representation.grid import FDataGrid
-from skfda.preprocessing.dim_reduction.variable_selection import MinimumRedundancyMaximumRelevance as MRMR
 from sklearn.feature_selection import mutual_info_classif
 
 from modules.utils import load_dataset, load_object
 
-def shap_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
-                sum_threshold: float = 1.0, min_strength: float = 0.0, max_threshold: float = 0.0) -> np.ndarray:
+def shap_select(
+    shap_values: np.ndarray,
+    kind: Union[str, List[str]] = "sum",
+    sum_threshold: float = 1.0,
+    min_strength: float = 0.0,
+    max_threshold: float = 0.0
+) -> np.ndarray:
     """
     Selects the most relevant feature indices based on SHAP importance values using
     one or more configurable selection strategies.
@@ -33,8 +40,6 @@ def shap_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
                 `sum_threshold` proportion of total SHAP importance.
               - `'max'`: retain features with SHAP values above
                 `max_threshold` proportion of the maximum SHAP value.
-              - `'decay'`: retain features until the relative decay between
-                consecutive SHAP values falls below `decay_threshold`.
             Defaults to `'sum'`.
         sum_threshold (float, optional):
             The cumulative proportion (0–1) of total SHAP importance to retain when using
@@ -99,10 +104,17 @@ def shap_select(shap_values: np.ndarray, kind: Union[str, List[str]] = "sum",
     
     return selection
 
-def create_feature_selected_dataset(idx: np.ndarray, train: pd.DataFrame, test: pd.DataFrame,
-                                    root_dir: str, dataset_name: str, model_type: str,
-                                    selection_strategy: str, selection_threshold: float,
-                                    verbose: bool = True) -> None:
+def create_feature_selected_dataset(
+    idx: np.ndarray,
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    root_dir: str,
+    dataset_name: str,
+    model_type: str,
+    selection_strategy: str,
+    selection_threshold: float,
+    verbose: bool = True
+) -> None:
     """
     Creates and saves feature-selected versions of training and testing datasets
     based on the provided feature indices.
@@ -176,44 +188,44 @@ def create_feature_selected_dataset(idx: np.ndarray, train: pd.DataFrame, test: 
 
     return
 
-def run_shap_selection(dataset_names: List[str], model_types: List[str], strategies: List[str],
-                       sum_thresholds: List[float], max_thresholds: List[float],
-                       train_dir: str, test_dir: str, explanations_dir: str,
-                       save_dir: str, metrics_dir: str) -> None:
+def run_shap_selection(
+    dataset_names: List[str],
+    model_types: List[str],
+    strategies: List[str],
+    sum_thresholds: List[float],
+    max_thresholds: List[float],
+    train_dir: str,
+    test_dir: str,
+    explanations_dir: str,
+    save_dir: str,
+    metrics_dir: str
+) -> None:
     """
-    Perform SHAP-based feature selection across multiple datasets and models.
-
-    This function loads precomputed SHAP explanations for each dataset-model pair,
-    applies SHAP-based feature selection strategies ('sum' or 'max'),
-    and saves reduced datasets containing only the selected features.
-    It also records selection statistics and timing information in a metrics file.
-
-    Parameters
-    ----------
-    dataset_names : List[str]
-        Names of datasets to process.
-    model_types : List[str]
-        Model types to include (e.g., ['rf', 'xgb', 'logreg']).
-    strategies : List[str]
-        SHAP feature selection strategies to apply:
-        - 'sum' : Select features by cumulative SHAP contribution.
-        - 'max' : Select features exceeding a SHAP magnitude threshold.
-    sum_thresholds : List[float]
-        Thresholds for cumulative SHAP contribution (used with 'sum' strategy).
-        Example: [0.7, 0.8, 0.9, 0.95].
-    max_thresholds : List[float]
-        Thresholds for SHAP magnitude filtering (used with 'max' strategy).
-        Example: [0.01, 0.05, 0.1, 0.15].
-    train_dir : str
-        Directory containing preprocessed training datasets (CSV or compressed CSV).
-    test_dir : str
-        Directory containing preprocessed testing datasets (CSV or compressed CSV).
-    explanations_dir : str
-        Directory containing SHAP explanation pickle files for each dataset-model pair.
-    save_dir : str
-        Directory to save reduced feature-selected datasets.
-    metrics_dir : str
-        Directory to save SHAP feature selection fit metrics (e.g., timing and feature counts).
+    Perform SHAP-based feature selection across multiple datasets and models.  
+    Loads precomputed SHAP explanations for each dataset-model pair, applies specified
+    feature selection strategies ('sum' or 'max'), and saves reduced datasets containing
+    only the selected features. Selection statistics and timing information are recorded
+    in a metrics file.
+    
+    Args:
+        dataset_names (List[str]): Names of datasets to process.
+        model_types (List[str]): Model types to include (e.g., ['rf', 'xgb', 'logreg']).
+        strategies (List[str]): SHAP feature selection strategies to apply:
+            - 'sum': Select features by cumulative SHAP contribution.
+            - 'max': Select features exceeding a SHAP magnitude threshold.
+        sum_thresholds (List[float]): Thresholds for cumulative SHAP contribution (used with
+            'sum' strategy). Example: [0.7, 0.8, 0.9, 0.95].
+        max_thresholds (List[float]): Thresholds for SHAP magnitude filtering (used with
+            'max' strategy). Example: [0.01, 0.05, 0.1, 0.15].
+        train_dir (str): Directory containing preprocessed training datasets (CSV or
+            compressed CSV).
+        test_dir (str): Directory containing preprocessed testing datasets (CSV or
+            compressed CSV).
+        explanations_dir (str): Directory containing SHAP explanation pickle files for each
+            dataset-model pair.
+        save_dir (str): Directory to save reduced feature-selected datasets.
+        metrics_dir (str): Directory to save SHAP feature selection metrics (e.g., timing
+            and feature counts).
     """
 
     fit_metrics = []  # Collect metrics such as number of features and SHAP fit time
@@ -332,8 +344,14 @@ def run_shap_selection(dataset_names: List[str], model_types: List[str], strateg
 
     return
 
-def run_feature_selection(dataset_names: List[str], shap_fit_metrics: pd.DataFrame,
-                          train_dir: str, test_dir: str, save_dir: str, metrics_dir: str) -> None:
+def run_feature_selection(
+    dataset_names: List[str],
+    shap_fit_metrics: pd.DataFrame,
+    train_dir: str,
+    test_dir: str,
+    save_dir: str,
+    metrics_dir: str
+) -> None:
     """
     Perform multiple feature selection methods (Mutual Information, ReliefF, MRMR, FCBF)
     across datasets, generate reduced versions, and record timing metrics.
@@ -346,6 +364,7 @@ def run_feature_selection(dataset_names: List[str], shap_fit_metrics: pd.DataFra
         save_dir (str): Directory to save reduced datasets.
         metrics_dir (str): Directory to save timing metrics summary.
     """   
+    
     # Initialize list to store timing metrics for feature selection
     fit_metrics = []
 

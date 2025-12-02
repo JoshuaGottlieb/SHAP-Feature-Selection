@@ -37,6 +37,7 @@ def save_object(obj: Any, path: str, compression: Optional[str] = None) -> None:
             Compression type to use ('gzip', 'bz2', 'lzma', or None).
             Defaults to None (uncompressed).
     """
+    
     # Ensure the output directory exists
     root = os.path.dirname(path)
     if root and not os.path.exists(root):
@@ -90,6 +91,7 @@ def load_object(path: str) -> Any:
         Any:
             The deserialized Python object.
     """
+    
     # Determine compression type based on file extension
     if path.endswith(".pickle.gz"):
         compression = "gzip"
@@ -131,14 +133,20 @@ def load_dataset(path: str, compression: str = 'gzip') -> pd.DataFrame:
     Returns:
         pd.DataFrame: A pandas DataFrame containing the loaded dataset.
     """
+    
     # Read CSV file into a DataFrame with optional compression
     df = pd.read_csv(path, compression = compression)
 
     return df
 
-def load_all_datasets(dataset_names: List[str], model_types: List[str],
-                      fs_types: List[str], full_dir: str, reduced_dir: str,
-                      other_dir: str) -> List[Dict[str, Dict[str, pd.DataFrame]]]:
+def load_all_datasets(
+    dataset_names: List[str],
+    model_types: List[str],
+    fs_types: List[str],
+    full_dir: str,
+    reduced_dir: str,
+    other_dir: str
+) -> List[Dict[str, Dict[str, pd.DataFrame]]]:
     """
     Load all training and testing datasets (full, SHAP-reduced, and feature-selected)
     across multiple datasets and model configurations.
@@ -167,6 +175,7 @@ def load_all_datasets(dataset_names: List[str], model_types: List[str],
             - Multiple other feature-selected datasets (e.g., 'fcbf', 'mrmr')
         - Informative log messages are printed for traceability.
     """
+    
     # Initialize nested dictionaries to hold training and testing sets
     train_sets: Dict[str, Dict[str, pd.DataFrame]] = {}
     test_sets: Dict[str, Dict[str, pd.DataFrame]] = {}
@@ -182,7 +191,11 @@ def load_all_datasets(dataset_names: List[str], model_types: List[str],
         test_sets[set_name_snake] = {}
 
         # Iterate through 'train' and 'test' splits
-        for split, set_dict in list(zip(['train', 'test'], [train_sets[set_name_snake], test_sets[set_name_snake]])):
+        for split, set_dict in list(zip(
+            ['train', 'test'],
+            [train_sets[set_name_snake],
+             test_sets[set_name_snake]]
+        )):
             print(f"[INFO] Loading {split} datasets...")
 
             # Load full (unreduced) dataset
@@ -251,8 +264,11 @@ def load_all_datasets(dataset_names: List[str], model_types: List[str],
     
     return train_sets, test_sets
 
-def load_all_models(dataset_names: List[str], model_types: List[str],
-                    models_dir: str) -> Dict[str, Dict[str, Dict[str, Any]]]:
+def load_all_models(
+    dataset_names: List[str],
+    model_types: List[str],
+    models_dir: str
+) -> Dict[str, Dict[str, Dict[str, Any]]]:
     """
     Load all trained models for each dataset and model type.
 
@@ -265,6 +281,7 @@ def load_all_models(dataset_names: List[str], model_types: List[str],
         Dict[str, Dict[str, Dict[str, Any]]]: Nested dictionary of models:
             {dataset_name: {model_type: {sampling_type: model_object}}}
     """
+    
     # Initialize dictionary to hold models
     models = {}
 
@@ -403,6 +420,7 @@ def load_model_hyperparameters(models_dir: str, metrics_dir: Optional[str] = Non
         pd.DataFrame: A pivot table with datasets as rows, model types as columns,
         and stringified hyperparameters as cell values.
     """
+    
     models_info = []
 
     # Traverse datasets and collect model objects with 'full' in filename

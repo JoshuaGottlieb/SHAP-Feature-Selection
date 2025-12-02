@@ -8,51 +8,43 @@ import shap
 
 from modules.utils import load_object, save_object
 
-def generate_shap_explanations(model_eval: Callable, data: pd.DataFrame,
-                               random_state: Optional[int] = None,
-                               batch: Optional[slice] = None) -> Dict[str, Any]:
+def generate_shap_explanations(
+    model_eval: Callable,
+    data: pd.DataFrame,
+    random_state: Optional[int] = None,
+    batch: Optional[slice] = None
+) -> Dict[str, Any]:
     """
-    Generate SHAP explanations for a fitted model using the Permutation explainer.
-
-    This function computes SHAP values for a given model evaluation function
-    (`model_eval`) using the `shap.PermutationExplainer`. The target column
-    is assumed to be the last column in the dataset and is automatically excluded
-    from the feature set.
-
-    Parameters
-    ----------
-    model_eval : Callable
-        A callable or model evaluation function that accepts feature data
-        and returns predictions (e.g., `model.predict_proba` or `model.predict`).
-    data : pd.DataFrame
-        The full dataset containing both features and a target column as the last column.
-    random_state : int, optional
-        Random seed for reproducibility of the SHAP permutation process.
-        Default is ``None``.
-    batch : slice, optional
-        Slice object specifying a subset of rows to explain.
-        If ``None``, all rows in the dataset are used for SHAP computation.
-
-    Returns
-    -------
-    Dict[str, Any]
-        A dictionary containing:
-        - ``"time"`` : float  
-          Total time (in seconds) taken to compute SHAP explanations.
-        - ``"shap_values"`` : np.ndarray  
-          Computed SHAP values for each feature.
-        - ``"mean_shap"`` : np.ndarray  
-          Mean absolute SHAP value per feature, representing global importance.
-
-    Notes
-    -----
-    - Uses `shap.explainers.Permutation` for model-agnostic SHAP computation.
-    - The target column (assumed to be last) is automatically excluded from the background
-      and feature data used for explanation.
-    - Supports both regression and classification models, depending on `model_eval`.
-    - If ``batch`` is provided, explanations are computed only for the specified slice
-      of rows, which is useful for large datasets.
-    - The returned mean absolute SHAP values are often used for global feature ranking.
+    Generate SHAP explanations for a fitted model using the permutation-based SHAP explainer.
+    The target column is assumed to be the last column and is automatically excluded from the
+    feature set. Optionally supports explaining only a slice of the data.
+    
+    Args:
+        model_eval (Callable): Callable model evaluation function that accepts feature data
+            and returns predictions (e.g., `model.predict_proba` or `model.predict`).
+        data (pd.DataFrame): Full dataset containing both features and a target column,
+            where the target is assumed to be the final column.
+        random_state (Optional[int], optional): Random seed for the permutation-based SHAP
+            computation. Defaults to None.
+        batch (Optional[slice], optional): Slice specifying a subset of rows to explain.
+            If None, SHAP values are computed for all rows. Defaults to None.
+    
+    Returns:
+        Dict[str, Any]: Dictionary containing:
+            - "time" (float): Total time (in seconds) required to compute SHAP explanations.
+            - "shap_values" (np.ndarray): Computed SHAP values for each feature.
+            - "mean_shap" (np.ndarray): Mean absolute SHAP value per feature, representing
+              global feature importance.
+    
+    Notes:
+        - Uses `shap.explainers.Permutation` for model-agnostic SHAP computation.
+        - The target column (assumed to be the last column) is automatically excluded from
+          the background and feature data.
+        - Supports both regression and classification models depending on the behavior of
+          `model_eval`.
+        - If `batch` is provided, SHAP values are computed only for the specified rows,
+          which is useful for large datasets.
+        - Mean absolute SHAP values are typically used for global feature ranking.
     """
     
     # Use the full dataset for background
@@ -98,6 +90,7 @@ def aggregate_shap_batches(shap_dir: str, model_type: str) -> None:
         shap_dir (str): Path to the directory containing SHAP batch files.
         model_type (str): Model identifier (e.g., 'rf', 'xgb') used to filter relevant files.
     """
+    
     # List all files in the SHAP directory
     files = os.listdir(shap_dir)
 

@@ -8,8 +8,11 @@ from sklearn.model_selection import train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, TargetEncoder
 
-def remove_duplicates_and_columns(dataset: pd.DataFrame, columns_to_drop: List[str] = [],
-                                  missingness_threshold: float = 0.5) -> pd.DataFrame:
+def remove_duplicates_and_columns(
+    dataset: pd.DataFrame,
+    columns_to_drop: List[str] = [],
+    missingness_threshold: float = 0.5
+) -> pd.DataFrame:
     """
     Remove duplicate rows and drop columns with high missingness.
 
@@ -25,6 +28,7 @@ def remove_duplicates_and_columns(dataset: pd.DataFrame, columns_to_drop: List[s
         pd.DataFrame:
             Cleaned dataset with duplicates removed and selected columns dropped.
     """
+    
     # Drop duplicate rows
     dataset = dataset.drop_duplicates()
 
@@ -42,7 +46,11 @@ def remove_duplicates_and_columns(dataset: pd.DataFrame, columns_to_drop: List[s
 
     return dataset
 
-def label_classes(dataset: pd.DataFrame, y: str, label_map: Dict[Union[str, int], Union[str, int]]) -> pd.DataFrame:
+def label_classes(
+    dataset: pd.DataFrame,
+    y: str,
+    label_map: Dict[Union[str, int], Union[str, int]]
+) -> pd.DataFrame:
     """
     Relabel the target column using a mapping dictionary.
 
@@ -58,13 +66,18 @@ def label_classes(dataset: pd.DataFrame, y: str, label_map: Dict[Union[str, int]
         pd.DataFrame:
             Dataset with the target column relabeled.
     """
+    
     # Apply mapping function to target column
     dataset[y] = dataset[y].map(lambda x: label_map[x])
 
     return dataset
 
-def preprocess_dataset(dataset: pd.DataFrame, y: str, categorical_columns: List[str],
-                       numeric_columns: List[str], ordinal_columns: List[str]) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def preprocess_dataset(
+    dataset: pd.DataFrame,
+    y: str, categorical_columns: List[str],
+    numeric_columns: List[str],
+    ordinal_columns: List[str]
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Preprocess dataset by splitting into train/test sets and applying 
     appropriate encoding/imputation/scaling pipelines.
@@ -86,6 +99,7 @@ def preprocess_dataset(dataset: pd.DataFrame, y: str, categorical_columns: List[
             - train: Preprocessed training dataset including transformed features and target.
             - test: Preprocessed test dataset including transformed features and target.
     """
+    
     # Split features and target
     X = dataset.drop(y, axis = 1)
     y_series = dataset[y]
@@ -180,8 +194,13 @@ def preprocess_dataset(dataset: pd.DataFrame, y: str, categorical_columns: List[
 
     return train, test
 
-def save_processed_dataset(train: pd.DataFrame, test: pd.DataFrame,
-                           train_path: str, test_path: str, compression: str = "gzip") -> None:
+def save_processed_dataset(
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    train_path: str,
+    test_path: str,
+    compression: str = "gzip"
+) -> None:
     """
     Save processed train and test datasets to disk as compressed CSV files.
 
@@ -197,6 +216,7 @@ def save_processed_dataset(train: pd.DataFrame, test: pd.DataFrame,
         compression (str, optional):
             Compression format to use when saving files. Default is 'gzip'.
     """
+    
     # Group datasets and their respective paths
     datasets = [train, test]
     paths = [train_path, test_path]

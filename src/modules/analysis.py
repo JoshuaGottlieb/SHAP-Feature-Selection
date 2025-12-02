@@ -1,37 +1,41 @@
 import os
-from typing import Dict, Any, Callable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
-import seaborn as sns
 from matplotlib.ticker import MaxNLocator
+import numpy as np
+import pandas as pd
 from pandas.io.formats.style import Styler
-from sklearn.model_selection import StratifiedKFold
-from sklearn.linear_model import LogisticRegression
-from sklearn.tree import DecisionTreeClassifier
+import seaborn as sns
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.svm import SVC, LinearSVC
-from xgboost import XGBClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     average_precision_score,
-    roc_auc_score,
-    recall_score,
+    f1_score,
     precision_score,
-    f1_score
+    recall_score,
+    roc_auc_score,
 )
+from sklearn.model_selection import StratifiedKFold
+from sklearn.svm import LinearSVC, SVC
+from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
+# Custom functions
 from modules.selection import shap_select
-
 from modules.utils import load_object
+
 
 # ---- Statistics Generating Functions ----
 
-def generate_crossval_statistics(models: Dict[str, Dict[str, Dict[str, Any]]],
-                                 train_sets: Dict[str, Dict[str, pd.DataFrame]],
-                                 n_splits: int = 5, random_state: int = 42,
-                                 metrics_dir: Optional[str] = None) -> pd.DataFrame:
+def generate_crossval_statistics(
+    models: Dict[str, Dict[str, Dict[str, Any]]],
+    train_sets: Dict[str, Dict[str, pd.DataFrame]],
+    n_splits: int = 5,
+    random_state: int = 42,
+    metrics_dir: Optional[str] = None
+) -> pd.DataFrame:
     """
     Perform stratified k-fold cross-validation for all dataset-model-selection combinations
     and compute mean performance metrics (PR-AUC, ROC-AUC, F1). Optionally saves results to CSV.
@@ -123,25 +127,26 @@ def generate_crossval_statistics(models: Dict[str, Dict[str, Dict[str, Any]]],
 
     return results_df
 
-def generate_test_statistics(models: Dict[str, Dict[str, Dict[str, Any]]],
-                             test_sets: Dict[str, Dict[str, pd.DataFrame]],
-                             metrics_dir: Optional[str] = None) -> pd.DataFrame:
+def generate_test_statistics(
+    models: Dict[str, Dict[str, Dict[str, Any]]],
+    test_sets: Dict[str, Dict[str, pd.DataFrame]],
+    metrics_dir: Optional[str] = None
+) -> pd.DataFrame:
     """
     Evaluate trained models on held-out test data and compute performance metrics.
-
-    Parameters
-    ----------
-    models : dict
-        Nested dict of fitted models indexed as [dataset][model][selection_type].
-    test_sets : dict
-        Nested dict of corresponding test sets with same structure as `models`.
-    metrics_dir : str, optional
-        Directory to save results and merge timing data. If None, results are returned only.
-
-    Returns
-    -------
-    pd.DataFrame
-        Test performance metrics (PR-AUC, ROC-AUC, Recall, Precision, F1) per model.
+    Optionally saves results and merges timing data if a metrics directory is provided.
+    
+    Args:
+        models (Dict[str, Dict[str, Dict[str, Any]]]): Nested dictionary of fitted models
+            indexed as [dataset][model][selection_type].
+        test_sets (Dict[str, Dict[str, pd.DataFrame]]): Nested dictionary of corresponding
+            test datasets with the same structure as `models`.
+        metrics_dir (Optional[str], optional): Directory to save results and merge timing data.
+            If None, results are returned only. Defaults to None.
+    
+    Returns:
+        pd.DataFrame: DataFrame containing test performance metrics (PR-AUC, ROC-AUC,
+            Recall, Precision, F1) for each model.
     """
     model_stats = []
 
@@ -266,20 +271,14 @@ def add_fit_time_statistics(results_df: pd.DataFrame, metrics_dir: str) -> pd.Da
 def dataset_model_slice(df: pd.DataFrame, dataset: str, model: str) -> pd.DataFrame:
     """
     Filter a DataFrame for a given dataset–model pair and simplify selection labels.
-
-    Parameters
-    ----------
-    df : pd.DataFrame
-        DataFrame containing model evaluation or fit statistics.
-    dataset : str
-        Target dataset name.
-    model : str
-        Target model type.
-
-    Returns
-    -------
-    pd.DataFrame
-        Filtered DataFrame with simplified 'selection_type' labels.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing model evaluation or fit statistics.
+        dataset (str): Target dataset name.
+        model (str): Target model type.
+    
+    Returns:
+        pd.DataFrame: Filtered DataFrame with simplified 'selection_type' labels.
     """
     # Create a copy of the filtered subset
     df_slice = df.loc[(df.dataset == dataset) & (df.model == model)].copy()
@@ -355,62 +354,12 @@ def select_lowest_k(
     )
 
     return masked_data.loc[k_mask].drop_duplicates()
-
-# def select_lowest_k(dataframe: pd.DataFrame, groupby_col: str,
-#                     transform: Callable, include_selection_type: bool = True) -> pd.DataFrame:
-#     """
-#     Select rows with the lowest 'k' value per group after applying a transformation
-#     to a grouping column, optionally including 'selection_type' in the grouping.
-
-#     This function filters the input DataFrame to exclude entries where
-#     'selection_type' == 'full' (if present), applies a specified transformation
-#     (e.g., 'min', 'max', 'median') to the specified grouping column, and returns
-#     only those rows that both match the transformed group value and have the
-#     smallest 'k' for that group.
-
-#     Args:
-#         dataframe (pd.DataFrame): Input DataFrame containing at least the columns:
-#             ['dataset', 'model', groupby_col, 'k'], and optionally 'selection_type'.
-#         groupby_col (str): The column name used for computing the transformation.
-#         transform (Callable): A transformation function applied via `groupby().transform()`,
-#             such as `min`, `max`, `median`, or a custom callable returning a scalar.
-#         include_selection_type (bool, optional): Whether to include 'selection_type' as part
-#             of the grouping key. Defaults to True.
-
-#     Returns:
-#         pd.DataFrame: A filtered DataFrame containing one row per unique combination of
-#         grouping keys (depending on `include_selection_type`) and 'groupby_col' with the
-#         smallest 'k' value, after applying the specified transformation.
-#     """
-#     # Exclude rows where the selection type is 'full' (if column exists)
-#     df = dataframe.copy()
-#     if 'selection_type' in df.columns:
-#         df = df[df.selection_type != 'full']
-
-#     # Define grouping columns based on user preference
-#     group_cols = ['dataset', 'model']
-#     if include_selection_type and 'selection_type' in df.columns:
-#         group_cols.append('selection_type')
-
-#     # Identify rows where the groupby_col value equals the transformed value within each group
-#     groupby_mask = (
-#         df.groupby(group_cols)[groupby_col].transform(transform) == df[groupby_col]
-#     )
-
-#     # Keep only rows matching the transformed group value
-#     masked_data = df.loc[groupby_mask]
-
-#     # Within each subgroup, select rows with the minimum 'k' value
-#     k_mask = (
-#         masked_data.groupby(group_cols + [groupby_col])['k']
-#         .transform('min') == masked_data['k']
-#     )
-
-#     # Drop duplicates to ensure one representative per group and return the filtered DataFrame
-#     return masked_data.loc[k_mask].drop_duplicates()
     
-def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
-                   metrics_dir: Optional[str] = None) -> dict[str, pd.DataFrame]:
+def extract_best_k(
+    cv_stats: pd.DataFrame,
+    test_stats: pd.DataFrame,
+    metrics_dir: Optional[str] = None
+) -> dict[str, pd.DataFrame]:
     """
     Extract optimal 'k' configurations from cross-validation and test statistics.
 
@@ -453,9 +402,9 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
     # Merge CV and test data on dataset, model, selection_type, and k
     cv_test = cv_stats.merge(
         test_stats,
-        on=['dataset', 'model', 'selection_type', 'k'],
-        suffixes=('_cv', '_test'),
-        how='inner'
+        on = ['dataset', 'model', 'selection_type', 'k'],
+        suffixes = ('_cv', '_test'),
+        how = 'inner'
     )[
         ['dataset', 'model', 'selection_type', 'k', 'pr_auc_cv', 'pr_auc_test']
     ]
@@ -481,9 +430,9 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
         .max()
         .rename("k_full")
     )
-    cv_test = cv_test.merge(full_k, on="dataset", how="left")
+    cv_test = cv_test.merge(full_k, on = "dataset", how = "left")
     cv_test["k_percent"] = 100 * cv_test["k"] / cv_test["k_full"]
-    cv_test.drop(columns="k_full", inplace=True)
+    cv_test.drop(columns = "k_full", inplace = True)
 
     # Vectorized computation of PR-AUC test percentage relative to full feature set
     full_pr_auc = (
@@ -492,15 +441,15 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
         .max()
         .rename("full_pr_auc")
     )
-    cv_test = cv_test.merge(full_pr_auc, on=["dataset", "model"], how="left")
+    cv_test = cv_test.merge(full_pr_auc, on = ["dataset", "model"], how = "left")
     cv_test["pr_auc_test_percent"] = 100 * cv_test["pr_auc_test"] / cv_test["full_pr_auc"]
-    cv_test.drop(columns="full_pr_auc", inplace=True)
+    cv_test.drop(columns = "full_pr_auc", inplace = True)
 
     # Identify best-k configurations by lowest overfitting
-    lowest_overfit = select_lowest_k(cv_test, groupby_col='pr_auc_diff', transform='min')
+    lowest_overfit = select_lowest_k(cv_test, groupby_col = 'pr_auc_diff', transform = 'min')
 
     # Identify best-k configurations by maximum test performance
-    max_test = select_lowest_k(cv_test, groupby_col='pr_auc_test', transform='max')
+    max_test = select_lowest_k(cv_test, groupby_col = 'pr_auc_test', transform = 'max')
 
     # Identify strongest local peaks in PR-AUC curves
     peak_slice = []
@@ -541,8 +490,8 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
     peak_slice = cv_test.loc[sorted(set(peak_slice))].copy()
 
     # Among peaks, select strongest (max PR-AUC) and earliest (min k)
-    strongest_peak = select_lowest_k(peak_slice, groupby_col='pr_auc_test', transform='max')
-    earliest_peak = select_lowest_k(peak_slice, groupby_col='k', transform='min')
+    strongest_peak = select_lowest_k(peak_slice, groupby_col = 'pr_auc_test', transform = 'max')
+    earliest_peak = select_lowest_k(peak_slice, groupby_col = 'k', transform = 'min')
 
     results = {
         "lowest_overfit": lowest_overfit,
@@ -553,93 +502,11 @@ def extract_best_k(cv_stats: pd.DataFrame, test_stats: pd.DataFrame,
 
     # Save results as CSV files if a metrics directory is provided
     if metrics_dir:
-        os.makedirs(metrics_dir, exist_ok=True)
+        os.makedirs(metrics_dir, exist_ok = True)
         for name, df in results.items():
-            df.to_csv(os.path.join(metrics_dir, f"{name}_best_k.csv"), index=False)
+            df.to_csv(os.path.join(metrics_dir, f"{name}_best_k.csv"), index = False)
 
     return results
-
-# def calculate_performance_counts(results: Dict[str, pd.DataFrame],
-#                                  metrics_dir: Optional[str] = None) -> pd.DataFrame:
-#     """
-#     Compute and summarize performance counts and average k percentages
-#     across multiple result DataFrames, optionally saving the results to CSV.
-
-#     This function iterates over a dictionary of result DataFrames, applying
-#     custom aggregation rules depending on the dataset index:
-#         - For the first dataset, selects entries with the minimum `pr_auc_diff`.
-#         - For subsequent datasets, selects entries with the maximum `pr_auc_test`.
-
-#     The function then counts how many times each feature selection method
-#     appears and computes the mean `k_percent` for each method. The results
-#     are concatenated into a single summary table.
-
-#     Args:
-#         results (Dict[str, pd.DataFrame]): 
-#             Dictionary mapping dataset names (keys) to result DataFrames (values).
-#         metrics_dir (Optional[str], optional): 
-#             Directory path where the resulting summary table should be saved as
-#             `performance_counts.csv`. If None, the file is not saved. Defaults to None.
-
-#     Returns:
-#         pd.DataFrame: 
-#             A DataFrame summarizing counts and mean k percentages per selection type.
-#     """
-#     performance_counts = pd.DataFrame()
-
-#     for i, (name, df) in enumerate(results.items()):
-#         # Define selection criterion depending on dataset order
-#         if i == 0:
-#             groupby_col = 'pr_auc_diff'
-#             transform = 'min'
-#         else:
-#             groupby_col = 'pr_auc_test'
-#             transform = 'max'
-
-#         # Select the best-performing subset per criterion
-#         subframe = select_lowest_k(
-#             df,
-#             groupby_col = groupby_col,
-#             transform = transform,
-#             include_selection_type = False
-#         ).drop_duplicates(subset = groupby_col, keep = False)
-
-#         # Count occurrences of each selection method
-#         df_counts = subframe['selection_type'].value_counts().to_frame(
-#             name = f'{name.replace("_", " ").title()} Count'
-#         )
-
-#         # Compute mean k_percent per selection type
-#         df_k = np.round(
-#             subframe.groupby('selection_type')['k_percent'].mean().to_frame(
-#                 name = f'{name.replace("_", " ").title()} Mean K%'
-#             ),
-#             2
-#         )
-
-#         # Merge into master performance table
-#         performance_counts = pd.concat([performance_counts, df_counts, df_k], axis = 1).fillna(0)
-
-#     # Clean and format final table
-#     performance_counts.index.name = 'Selection Type'
-#     performance_counts = performance_counts.reset_index().sort_values('Selection Type')
-#     performance_counts['Selection Type'] = performance_counts['Selection Type'].replace({
-#         'relieff': 'ReliefF',
-#         'shap': 'SHAP',
-#         'mutual_info': 'Mutual Information',
-#         'mrmr': 'mRMR'
-#     })
-
-#     # Set index for readability
-#     performance_counts = performance_counts.set_index('Selection Type')
-
-#     # Optionally save to CSV
-#     if metrics_dir is not None:
-#         os.makedirs(metrics_dir, exist_ok = True)
-#         save_path = os.path.join(metrics_dir, "performance_counts.csv")
-#         performance_counts.to_csv(save_path, index = True)
-
-#     return performance_counts
 
 def calculate_performance_counts(
     results: Dict[str, pd.DataFrame],
@@ -664,13 +531,10 @@ def calculate_performance_counts(
             Summary table with counts and mean k_percent per selection group.
     """
 
-    # Normalize subset_cols to list for consistency
     if subset_cols is None:
         subset_cols = "selection_type"
-    # elif isinstance(subset_cols, str):
-    #     subset_cols = [subset_cols]
 
-    group_key = subset_cols  # used for groupby and counts
+    group_key = subset_cols
 
     performance_counts = pd.DataFrame()
 
@@ -686,42 +550,37 @@ def calculate_performance_counts(
         # Run lowest-k selection (ignores selection_type grouping)
         subframe = select_lowest_k(
             df,
-            groupby_col=groupby_col,
-            transform=transform,
-            include_selection_type=False,
-        ).drop_duplicates(subset=groupby_col, keep=False)
+            groupby_col = groupby_col,
+            transform = transform,
+            include_selection_type = False,
+        ).drop_duplicates(subset = groupby_col, keep = False)
 
-        # ----- Counts -----
+        # Counts
         df_counts = (
             subframe[group_key]
             .value_counts()
-            .to_frame(name=f'{name.replace("_", " ").title()} Count')
+            .to_frame(name = f'{name.replace("_", " ").title()} Count')
         )
 
-        # ----- Mean K% -----
+        # Mean Features Kept
         df_k = (
             subframe.groupby(group_key)["k_percent"]
             .mean()
             .round(2)
-            .to_frame(name=f'{name.replace("_", " ").title()} Mean K%')
+            .to_frame(name = f'{name.replace("_", " ").title()} Mean K%')
         )
 
         # Merge into master table
         performance_counts = pd.concat(
-            [performance_counts, df_counts, df_k], axis=1
+            [performance_counts, df_counts, df_k], axis = 1
         ).fillna(0)
 
     # Clean final table
-    
-    
     performance_counts = performance_counts.sort_index()
-    # print(performance_counts)
     performance_counts.index.name = (
         "Selection Group" if isinstance(group_key, list) else group_key.replace("_", " ").title()
     )
-    
     performance_counts = performance_counts.reset_index()
-    # print(performance_counts)
 
     # Rename common selection types (only applies when subset_cols = ['selection_type'])
     rename_map = {
@@ -739,9 +598,9 @@ def calculate_performance_counts(
 
     # Optional save
     if metrics_dir is not None:
-        os.makedirs(metrics_dir, exist_ok=True)
+        os.makedirs(metrics_dir, exist_ok = True)
         save_path = os.path.join(metrics_dir, "performance_counts.csv")
-        performance_counts.to_csv(save_path, index=True)
+        performance_counts.to_csv(save_path, index = True)
 
     return performance_counts
     
@@ -797,8 +656,11 @@ def extract_average_time_data(time_data: pd.DataFrame) -> tuple[pd.DataFrame, pd
 
     return average_time_data, average_shap_time
 
-def calculate_shap_counts(results: Dict[str, pd.DataFrame], cv_stats: pd.DataFrame,
-                          metrics_dir: Optional[str] = None) -> pd.DataFrame:
+def calculate_shap_counts(
+    results: Dict[str, pd.DataFrame],
+    cv_stats: pd.DataFrame,
+    metrics_dir: Optional[str] = None
+) -> pd.DataFrame:
     """
     Calculate how many times SHAP-based feature selection appears in each of the
     result categories (e.g., lowest overfit, max test, strongest peak, earliest peak).
@@ -864,12 +726,21 @@ def calculate_shap_counts(results: Dict[str, pd.DataFrame], cv_stats: pd.DataFra
 
 # ---- Plotting and Styling Functions ----
 
-def custom_barplot(data, x: str, y: str, hue: Optional[str] = None,
-                   hue_order: Optional[List[str]] = None, xticklabels: Optional[List[str]] = None,
-                   xlabel: Optional[str] = None, ylabel: Optional[str] = None,
-                   title: Optional[str] = None, rotation: int = 0,
-                   legend_labels: Optional[List[str]] = None,
-                   legend_kwargs: Optional[Dict[str, Any]] = None, figsize: tuple = (12, 4)) -> plt.Axes:
+def custom_barplot(
+    data,
+    x: str,
+    y: str,
+    hue: Optional[str] = None,
+    hue_order: Optional[List[str]] = None,
+    xticklabels: Optional[List[str]] = None,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+    title: Optional[str] = None,
+    rotation: int = 0,
+    legend_labels: Optional[List[str]] = None,
+    legend_kwargs: Optional[Dict[str, Any]] = None,
+    figsize: tuple = (12, 4)
+) -> plt.Axes:
     """
     Create a customized bar plot using Seaborn with flexible labeling and formatting options.
 
@@ -934,13 +805,20 @@ def custom_barplot(data, x: str, y: str, hue: Optional[str] = None,
 
     return ax
 
-
-def custom_scatterplot(data, x: str, y: str, hue: Optional[str] = None,
-                       hue_order: Optional[List[str]] = None, xlabel: Optional[str] = None,
-                       ylabel: Optional[str] = None, title: Optional[str] = None,
-                       legend_labels: Optional[List[str]] = None,
-                       legend_kwargs: Optional[Dict[str, Any]] = None, rotation: int = 0,
-                       figsize: tuple = (12, 4)) -> plt.Axes:
+def custom_scatterplot(
+    data,
+    x: str,
+    y: str,
+    hue: Optional[str] = None,
+    hue_order: Optional[List[str]] = None,
+    xlabel: Optional[str] = None,
+    ylabel: Optional[str] = None,
+    title: Optional[str] = None,
+    legend_labels: Optional[List[str]] = None,
+    legend_kwargs: Optional[Dict[str, Any]] = None,
+    rotation: int = 0,
+    figsize: tuple = (12, 4)
+) -> plt.Axes:
     """
     Create a customized scatter plot using Seaborn with flexible labeling and formatting options.
 
@@ -1006,71 +884,6 @@ def custom_scatterplot(data, x: str, y: str, hue: Optional[str] = None,
 
     return ax
 
-# def style_dataframe(df: pd.DataFrame, hide_index: bool = True,
-#                     format_dict: Optional[dict] = None, cell_width: str = '90px',
-#                     index_width: str = '150px') -> Styler:
-#     """
-#     Apply consistent styling to a DataFrame for display in Jupyter notebooks.
-
-#     Args:
-#         df (pd.DataFrame): The DataFrame to style.
-#         hide_index (bool, optional): Whether to hide the index column. Defaults to True.
-#         format_dict (dict, optional): Dictionary mapping column names to formatting strings
-#             (e.g., {'col1': '{:.2f}'}). If None, numeric columns are automatically formatted.
-#         cell_width (str, optional): Width of data cells. Defaults to '90px'.
-#         index_width (str, optional): Width of index column. Defaults to '150px'.
-
-#     Returns:
-#         pd.io.formats.style.Styler: Styled DataFrame object.
-#     """
-#     styled = df.style.set_table_styles(
-#         [
-#             # Column headers
-#             {'selector': 'th', 'props': [
-#                 ('text-align', 'center'),
-#                 ('color', 'black'),
-#                 # ('border', '1px solid black'),
-#                 ('border-bottom', '1px solid black'),
-#                 # ('border-top', '1px solid black'),
-#                 # ('border-right', '1px solid black'),
-#                 ('background-color', 'white'),
-#                 ('font-size', '12px'),
-#                 ('font-weight', 'bold')
-#             ]},
-#             # Index column (row header)
-#             {'selector': 'th.row_heading', 'props': [
-#                 ('text-align', 'center'),
-#                 ('width', index_width),
-#                 # ('border', '1px solid black'),
-#                 # ('border-top', '1px solid black'),
-#                 ('border-right', '1px solid black'),
-#                 ('background-color', 'white'),
-#                 ('color', 'black')
-#             ]},
-#             # Data cells
-#             {'selector': 'td', 'props': [
-#                 ('text-align', 'center'),
-#                 ('color', 'black'),
-#                 # ('border', '1px solid black'),
-#                 # ('border-bottom', '1px solid black'),
-#                 # ('border-right', '1px solid black'),
-#                 ('background-color', 'white'),
-#                 ('width', cell_width),
-#                 ('font-size', '12px'),
-#                 ('font-weight', 'bold')
-#             ]}
-#         ]
-#     )
-#     if format_dict:
-#         styled = styled.format(format_dict)
-
-#     if hide_index:
-#         styled = styled.hide(axis = 'index')
-
-#     styled = styled.set_properties(**{'width': cell_width})
-
-#     return styled
-
 def style_dataframe(
     df: pd.DataFrame,
     hide_index: bool = True,
@@ -1084,20 +897,70 @@ def style_dataframe(
     header_font_color: str = "black",
 ) -> Styler:
     """
-    Apply consistent styling to a DataFrame for display in Jupyter notebooks,
-    with optional alternating row background colors and unified header styling
-    for standard headers and MultiIndex headers.
-    """
+    Style a pandas DataFrame for cleaner display in Jupyter notebooks.
 
+    This function applies consistent formatting to both standard and MultiIndex
+    DataFrames, ensuring uniform header appearance, centered cell content,
+    optional number formatting, adjusted cell widths, and optional alternating
+    row background colors.
+
+    The function returns a pandas Styler object suitable for use in Jupyter
+    notebooks or HTML rendering.
+
+    Args:
+        df (pd.DataFrame): The DataFrame to style.
+        hide_index (bool): If True, the index is hidden in the rendered output.
+        format_dict (dict, optional): Mapping of column names to formatting
+            strings or formatting callables. Passed to `Styler.format`.
+        cell_width (str): CSS width for data cells. Applies to all non-index
+            cells in the table.
+        index_width (str): CSS width for index column cells when the index is shown.
+        alternate_rows (bool): If True, row backgrounds alternate between
+            `alt_color_1` and `alt_color_2`.
+        alt_color_1 (str): Background color for even-indexed rows when
+            alternating row colors is enabled.
+        alt_color_2 (str): Background color for odd-indexed rows when
+            alternating row colors is enabled.
+        header_bg (str): Background color applied to all table header cells,
+            including MultiIndex headers.
+        header_font_color (str): Text color for header cells.
+
+    Returns:
+        Styler: A pandas Styler object with all specified formatting applied.
+
+    Notes:
+        - Alternating row colors are applied across the full table width.
+        - MultiIndex column headers receive the same styling as single-level
+          headers due to the general 'th' selector.
+        - Width properties are applied to ensure consistent column sizing.
+    """
+    
     def _alternate_row_bg_full(df_in: pd.DataFrame) -> pd.DataFrame:
-        """Create DataFrame of style strings for row-wise alternating backgrounds."""
+        """
+        Generate a DataFrame of CSS background-color rules for alternating row shading.
+    
+        This helper function creates a DataFrame with the same shape and index/column
+        structure as the input DataFrame. Each cell contains a CSS style string that
+        applies one of two background colors, alternating by row index. The returned
+        DataFrame is intended for use with `Styler.apply` to color full rows.
+    
+        Args:
+            df_in (pd.DataFrame): The DataFrame whose shape and index/column layout
+                are used to construct the style map.
+    
+        Returns:
+            pd.DataFrame: A DataFrame of the same shape as `df_in`, where each cell
+            contains a background-color CSS rule. Even-indexed rows receive
+            `alt_color_1` and odd-indexed rows receive `alt_color_2`.
+    
+        """
         n_rows, n_cols = df_in.shape
-        bg = pd.DataFrame('', index=df_in.index, columns=df_in.columns)
+        bg = pd.DataFrame('', index = df_in.index, columns = df_in.columns)
         for i in range(n_rows):
             color = alt_color_1 if (i % 2) == 0 else alt_color_2
             bg.iloc[i, :] = f'background-color: {color}'
         return bg
-
+        
     styled = df.style.set_table_styles(
         [
             # GENERAL TH — applies to *all* header cells including MultiIndex
@@ -1124,7 +987,6 @@ def style_dataframe(
             {'selector': 'td', 'props': [
                 ('text-align', 'center'),
                 ('color', 'black'),
-                # ('background-color', 'white'),
                 ('width', cell_width),
                 ('font-size', '12px'),
                 ('font-weight', 'bold'),
@@ -1138,211 +1000,16 @@ def style_dataframe(
 
     # Hide index if requested
     if hide_index:
-        styled = styled.hide(axis='index')
+        styled = styled.hide(axis = 'index')
 
     # Apply alternating row backgrounds
     if alternate_rows:
-        styled = styled.apply(_alternate_row_bg_full, axis=None)
+        styled = styled.apply(_alternate_row_bg_full, axis = None)
 
     # Ensure widths apply
     styled = styled.set_properties(**{'width': cell_width})
 
     return styled
-
-
-# def style_dataframe(
-#     df: pd.DataFrame,
-#     hide_index: bool = True,
-#     format_dict: Optional[dict] = None,
-#     cell_width: str = "90px",
-#     index_width: str = "150px",
-#     alternate_rows: bool = False,
-#     striped_cols: Optional[list] = None,
-#     striped_index_level: Optional[Union[int, str]] = None,
-#     alt_color_1: str = "#ffffff",
-#     alt_color_2: str = "#f5f5f5",
-#     header_bg: str = "#e6e6e6",
-#     header_font_color: str = "black",
-# ) -> Styler:
-#     """
-#     Style a DataFrame with optional alternating row shading, optionally applying
-#     alternating shading to a specific level of a MultiIndex.
-
-#     Args:
-#         striped_cols (list, optional):
-#             Columns to apply striping to. If None, all columns are striped.
-#         striped_index_level (int or str, optional):
-#             MultiIndex level (by integer position or name) to use for row striping.
-#             If None, index is not striped separately.
-#     """
-
-#     # Determine column mask for striping
-#     if striped_cols is None:
-#         col_mask = pd.Series(True, index=df.columns)
-#     else:
-#         col_mask = pd.Series(False, index=df.columns)
-#         for col in striped_cols:
-#             if col in df.columns:
-#                 col_mask.loc[col] = True
-#             else:
-#                 raise KeyError(f"Column '{col}' not found in DataFrame.columns.")
-
-#     def _alternate_row_styles(data: pd.DataFrame) -> pd.DataFrame:
-#         """Generate CSS for alternating row colors on selected columns."""
-#         styles = pd.DataFrame("", index=data.index, columns=data.columns)
-
-#         if striped_index_level is not None and isinstance(data.index, pd.MultiIndex):
-#             # Compute stripe colors based on unique values in the given level
-#             if isinstance(striped_index_level, int):
-#                 level_vals = data.index.get_level_values(striped_index_level)
-#             else:
-#                 level_vals = data.index.get_level_values(striped_index_level)
-
-#             # Track alternating blocks per unique value
-#             unique_vals = pd.Series(level_vals).factorize()[0]  # 0,1,2,...
-#             for i, idx in enumerate(data.index):
-#                 bg = alt_color_1 if (unique_vals[i] % 2 == 0) else alt_color_2
-#                 for col in data.columns:
-#                     if col_mask[col]:
-#                         styles.at[idx, col] = f"background-color: {bg}"
-#         else:
-#             # Default: stripe by row index
-#             for i, idx in enumerate(data.index):
-#                 bg = alt_color_1 if (i % 2 == 0) else alt_color_2
-#                 for col in data.columns:
-#                     if col_mask[col]:
-#                         styles.at[idx, col] = f"background-color: {bg}"
-
-#         return styles
-
-#     # Base styles
-#     styled = df.style.set_table_styles(
-#         [
-#             {"selector": "th", "props": [
-#                 ("background-color", header_bg),
-#                 ("color", header_font_color),
-#                 ("font-size", "12px"),
-#                 ("font-weight", "bold"),
-#                 ("text-align", "center"),
-#             ]},
-#             {"selector": "th.col_heading", "props": [("border-bottom", "1px solid black")]},
-#             {"selector": "th.row_heading", "props": [
-#                 ("width", index_width),
-#                 ("border-right", "1px solid black"),
-#                 ("text-align", "center"),
-#             ]},
-#             {"selector": "td", "props": [
-#                 ("text-align", "center"),
-#                 ("color", "black"),
-#                 # ("background-color", "white"),
-#                 ("width", cell_width),
-#                 ("font-size", "12px"),
-#                 ("font-weight", "bold"),
-#             ]},
-#         ]
-#     )
-
-#     if format_dict:
-#         styled = styled.format(format_dict)
-
-#     if alternate_rows:
-#         styled = styled.apply(_alternate_row_styles, axis=None)
-
-#     if hide_index:
-#         styled = styled.hide(axis="index")
-
-#     styled = styled.set_properties(**{"width": cell_width})
-
-#     return styled
-
-
-
-
-
-# def style_dataframe(
-#     df: pd.DataFrame,
-#     hide_index: bool = True,
-#     format_dict: Optional[dict] = None,
-#     cell_width: str = '90px',
-#     index_width: str = '150px',
-#     alternate_rows: bool = False,
-#     alt_color_1: str = "#ffffff",
-#     alt_color_2: str = "#f5f5f5",
-#     header_bg: str = "#e6e6e6",
-#     header_font_color: str = "black",
-# ) -> Styler:
-#     """
-#     Apply consistent styling to a DataFrame for display in Jupyter notebooks,
-#     with optional alternating row background colors and unified header styling
-#     for both column headers and index headers.
-
-#     Args:
-#         df (pd.DataFrame): The DataFrame to style.
-#         hide_index (bool, optional): Whether to hide the index column. Defaults to True.
-#         format_dict (dict, optional): Formatting rules for columns.
-#         cell_width (str, optional): Width of data cells.
-#         index_width (str, optional): Width of index column.
-#         alternate_rows (bool, optional): Enable alternating row colors.
-#         alt_color_1 (str, optional): Background for even rows.
-#         alt_color_2 (str, optional): Background for odd rows.
-#         header_bg (str, optional): Background color for *all* header cells.
-#         header_font_color (str, optional): Text color for header labels.
-
-#     Returns:
-#         Styler: Styled DataFrame.
-#     """
-
-#     def _alternate_row_colors(row):
-#         """Return row-level background color instructions."""
-#         color = alt_color_1 if row.name % 2 == 0 else alt_color_2
-#         return [f"background-color: {color}"] * len(row)
-
-#     styled = df.style.set_table_styles(
-#         [
-#             # Column headers
-#             {'selector': 'th.col_heading', 'props': [
-#                 ('text-align', 'center'),
-#                 ('color', header_font_color),
-#                 ('background-color', header_bg),
-#                 ('border-bottom', '1px solid black'),
-#                 ('font-size', '12px'),
-#                 ('font-weight', 'bold'),
-#             ]},
-#             # Index header (row index label)
-#             {'selector': 'th.row_heading', 'props': [
-#                 ('text-align', 'center'),
-#                 ('width', index_width),
-#                 ('border-right', '1px solid black'),
-#                 ('color', header_font_color),
-#                 ('background-color', header_bg),   # <<< MATCH COLUMN HEADER STYLE
-#                 ('font-size', '12px'),
-#                 ('font-weight', 'bold'),
-#             ]},
-#             # Data cells
-#             {'selector': 'td', 'props': [
-#                 ('text-align', 'center'),
-#                 ('color', 'black'),
-#                 ('background-color', 'white'),
-#                 ('width', cell_width),
-#                 ('font-size', '12px'),
-#                 ('font-weight', 'bold'),
-#             ]},
-#         ]
-#     )
-
-#     if format_dict:
-#         styled = styled.format(format_dict)
-
-#     if hide_index:
-#         styled = styled.hide(axis='index')
-
-#     # Alternating row colors
-#     if alternate_rows:
-#         styled = styled.apply(_alternate_row_colors, axis=1)
-
-#     styled = styled.set_properties(**{'width': cell_width})
-
-#     return styled
     
 def style_pivot(
     dataframe: pd.DataFrame,
@@ -1390,7 +1057,7 @@ def style_pivot(
             The styled DataFrame.
     """
 
-    # ---- Build pivot table ----
+    # Build pivot table
     pivot = (
         dataframe.groupby([index, columns])[values]
         .agg(aggregation)
@@ -1409,10 +1076,10 @@ def style_pivot(
 
     pivot.index.name = ""
 
-    # ---- Build formatting dict ----
+    # Build formatting dict
     format_dict = {col: precision for col in pivot.columns}
 
-    # ---- Style using helper ----
+    # Style using helper
     styled = style_dataframe(
         df = pivot.reset_index(),
         hide_index = hide_index,
@@ -1446,11 +1113,19 @@ def style_pivot(
 
     return styled
     
-def label_test_dataset(test_stats: pd.DataFrame, results: Dict[str, pd.DataFrame],
-                       dataset: str, model: str, upper_offset: float = 0.05,
-                       lower_offset: float = 0.20, connectionstyles: List[str] = None,
-                       result_indices: List[int] = None, x_offsets: List[float] = None,
-                       y_offsets: List[float] = None, legend_kwargs: Dict[str, Any] = None) -> plt.Axes:
+def label_test_dataset(
+    test_stats: pd.DataFrame,
+    results: Dict[str, pd.DataFrame],
+    dataset: str,
+    model: str,
+    upper_offset: float = 0.05,
+    lower_offset: float = 0.20,
+    connectionstyles: List[str] = None,
+    result_indices: List[int] = None,
+    x_offsets: List[float] = None,
+    y_offsets: List[float] = None,
+    legend_kwargs: Dict[str, Any] = None
+) -> plt.Axes:
     """
     Plot PR AUC versus the number of selected test features for a given dataset–model
     combination, and annotate specific test results using customizable offsets and
@@ -1597,47 +1272,42 @@ def label_test_dataset(test_stats: pd.DataFrame, results: Dict[str, pd.DataFrame
 
     return ax
 
-def compare_features_performance(cv_slice: pd.DataFrame, test_slice: pd.DataFrame,
-                                 dataset: str, model: str,
-                                 figsize: Optional[Tuple[int, int]] = (16, 6),
-                                 save_dir: Optional[str] = None) -> plt.Figure:
+def compare_features_performance(
+    cv_slice: pd.DataFrame,
+    test_slice: pd.DataFrame,
+    dataset: str,
+    model: str,
+    figsize: Optional[Tuple[int, int]] = (16, 6),
+    save_dir: Optional[str] = None
+) -> plt.Figure:
     """
-    Compare Precision-Recall AUC (PR AUC) versus the number of selected features (K)
-    for both cross-validation and test datasets.
-
-    Parameters
-    ----------
-    cv_slice : pd.DataFrame
-        DataFrame containing cross-validation results with the following columns:
-        - 'k': int, number of selected features.
-        - 'pr_auc': float, Precision-Recall AUC score.
-        - 'selection_type': str, feature selection strategy identifier.
-    test_slice : pd.DataFrame
-        DataFrame containing test results with the same structure as `cv_slice`.
-    dataset : str
-        Name of the dataset, used in figure titles and output filenames.
-    model : str
-        Name of the model, used in figure titles and output filenames.
-    figsize : Optional[Tuple[int, int]], default = (16, 6)
-        Size of the matplotlib figure in inches.
-    save_dir : Optional[str], default = None
-        Directory path to save the generated figure as a PNG file.
-        If provided, the figure is saved with 300 DPI and tight bounding box.
-
-    Returns
-    -------
-    plt.Figure
-        The matplotlib Figure object containing the comparison plots.
-
-    Notes
-    -----
-    - The plot displays two subplots: one for cross-validation results
-      and one for test results, sharing the same y-axis.
-    - Each subplot shows PR AUC as a function of K across different
-      feature selection strategies.
-    - The best PR AUC score is annotated and marked with a horizontal dashed line.
-    - If `save_dir` is specified, the figure is automatically saved to disk.
+    Compare Precision-Recall AUC (PR-AUC) against the number of selected features (K)
+    for both cross-validation and test datasets. Optionally saves the generated figure.
+    
+    Args:
+        cv_slice (pd.DataFrame): DataFrame containing cross-validation results with columns:
+            - 'k': int, number of selected features.
+            - 'pr_auc': float, Precision-Recall AUC score.
+            - 'selection_type': str, feature selection strategy identifier.
+        test_slice (pd.DataFrame): DataFrame containing test results with the same structure
+            as `cv_slice`.
+        dataset (str): Name of the dataset, used in figure titles and output filenames.
+        model (str): Name of the model, used in figure titles and output filenames.
+        figsize (Optional[Tuple[int, int]], optional): Size of the matplotlib figure in inches.
+            Defaults to (16, 6).
+        save_dir (Optional[str], optional): Directory path to save the generated figure as a PNG.
+            If provided, the figure is saved at 300 DPI with a tight bounding box. Defaults to None.
+    
+    Returns:
+        plt.Figure: Matplotlib Figure containing the comparison plots.
+    
+    Notes:
+        - The figure contains two subplots: one for cross-validation results and one for test results.
+        - Each subplot displays PR-AUC as a function of K across feature selection strategies.
+        - The best PR-AUC score is annotated and highlighted with a horizontal dashed line.
+        - If `save_dir` is specified, the figure is automatically saved.
     """
+    
     fig, axes = plt.subplots(1, 2, figsize = figsize, sharey = True)
 
     # Combine SHAP types together
@@ -1710,36 +1380,31 @@ def compare_feature_importances_for_dataset(
     save_dir: Optional[str] = None
 ) -> Tuple[List[pd.DataFrame], List[pd.DataFrame], List[Any]]:
     """
-    Generate and compare feature importance performance plots across multiple models
-    for a given dataset using cross-validation and test statistics.
-
-    Parameters
-    ----------
-    cv_stats : pd.DataFrame
-        DataFrame containing cross-validation performance metrics for multiple models
-        and datasets. Must include columns for dataset, model, and feature selection results.
-    test_stats : pd.DataFrame
-        DataFrame containing test performance metrics, structured identically to `cv_stats`.
-    dataset : str
-        The dataset identifier used to filter relevant rows from both statistics DataFrames.
-    model_types : List[str]
-        List of model names to include in the comparison. Each model will generate a
-        separate PR AUC vs. feature count plot.
-    save_dir : Optional[str], default = None
-        Directory path to save the generated plots as PNG files.
-        If not provided, figures are not saved.
-
-    Returns
-    -------
-    Tuple[List[pd.DataFrame], List[pd.DataFrame], List[Any]]
-        A tuple containing three lists:
-        - cv_slices : List[pd.DataFrame]
-            Filtered cross-validation subsets for each model.
-        - test_slices : List[pd.DataFrame]
-            Filtered test subsets for each model.
-        - feature_performances : List[Any]
-            The matplotlib Figure objects produced for each model comparison.
+    Generate and compare feature-importance performance plots across multiple models for a
+    given dataset using cross-validation and test statistics. Optionally saves the generated
+    figures.
+    
+    Args:
+        cv_stats (pd.DataFrame): DataFrame containing cross-validation performance metrics
+            for multiple models and datasets. Must include columns for dataset, model, and
+            feature selection results.
+        test_stats (pd.DataFrame): DataFrame containing test performance metrics with the
+            same structure as `cv_stats`.
+        dataset (str): Dataset identifier used to filter relevant rows from both statistics
+            DataFrames.
+        model_types (List[str]): List of model names to include in the comparison, where
+            each model produces a separate PR-AUC–vs.–feature-count plot.
+        save_dir (Optional[str], optional): Directory path to save the generated figures as
+            PNG files. If None, figures are not saved. Defaults to None.
+    
+    Returns:
+        Tuple[List[pd.DataFrame], List[pd.DataFrame], List[Any]]: A tuple containing:
+            - cv_slices (List[pd.DataFrame]): Filtered cross-validation subsets for each model.
+            - test_slices (List[pd.DataFrame]): Filtered test subsets for each model.
+            - feature_performances (List[Any]): Matplotlib Figure objects for each model’s
+              performance comparison.
     """
+
     # Initialize storage lists for results
     cv_slices = []
     test_slices = []
@@ -1767,9 +1432,11 @@ def compare_feature_importances_for_dataset(
 
     return cv_slices, test_slices, feature_performances
 
-def add_annotation_if_new(ax: Axes, text: str,
-                          xy_position: Tuple[float, float],
-                          annotations: List[Tuple[str, Tuple[float, float], object]]) -> bool:
+def add_annotation_if_new(
+    ax: Axes, text: str,
+    xy_position: Tuple[float, float],
+    annotations: List[Tuple[str, Tuple[float, float], object]]
+) -> bool:
     """
     Add a matplotlib annotation only if an annotation at the same coordinates
     has not already been recorded.
@@ -1799,9 +1466,15 @@ def add_annotation_if_new(ax: Axes, text: str,
 
     return True
 
-def annotated_max_shap(dataset: str, model_type: str, model_name: str,
-                       shap_dir: str, results: Dict[str, pd.DataFrame],
-                       stats_frame: pd.DataFrame, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def annotated_max_shap(
+    dataset: str,
+    model_type: str,
+    model_name: str,
+    shap_dir: str,
+    results: Dict[str, pd.DataFrame],
+    stats_frame: pd.DataFrame,
+    ax: Optional[plt.Axes] = None
+) -> plt.Axes:
     """
     Generate a plot showing SHAP-based max-threshold feature selection behavior
     for a single dataset and model, including annotated benchmark points from
@@ -1913,9 +1586,15 @@ def annotated_max_shap(dataset: str, model_type: str, model_name: str,
 
     return ax
 
-def annotated_sum_shap(dataset: str, model_type: str, model_name: str,
-                       shap_dir: str, results: Dict[str, pd.DataFrame],
-                       stats_frame: pd.DataFrame, ax: Optional[plt.Axes] = None) -> plt.Axes:
+def annotated_sum_shap(
+    dataset: str,
+    model_type: str,
+    model_name: str,
+    shap_dir: str,
+    results: Dict[str, pd.DataFrame],
+    stats_frame: pd.DataFrame,
+    ax: Optional[plt.Axes] = None
+) -> plt.Axes:
     """
     Plot SHAP-based feature counts derived from the sum strategy,
     along with annotated points representing selected thresholds
