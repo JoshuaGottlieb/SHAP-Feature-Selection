@@ -5,7 +5,7 @@ from typing import List, Union
 import numpy as np
 import pandas as pd
 from ReliefF import ReliefF
-from skfda.preprocess.dim_reduction.variable_selection import (
+from skfda.preprocessing.dim_reduction.variable_selection import (
     MinimumRedundancyMaximumRelevance as MRMR,
 )
 from skfda.representation.grid import FDataGrid

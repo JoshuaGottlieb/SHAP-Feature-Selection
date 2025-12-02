@@ -26,7 +26,6 @@ from xgboost import XGBClassifier
 from modules.selection import shap_select
 from modules.utils import load_object
 
-
 # ---- Statistics Generating Functions ----
 
 def generate_crossval_statistics(
@@ -1112,7 +1111,38 @@ def style_pivot(
         )
 
     return styled
+
+def add_caption(styled: Styler, caption_text: str) -> Styler:
+    """
+    Add a styled caption to a pandas Styler object.
+
+    The caption is displayed above the table with bold font, custom font size,
+    background color, and bottom border.
+
+    Args:
+        styled (Styler): A pandas Styler object to which the caption will be added.
+        caption_text (str): Text to display as the table caption.
+
+    Returns:
+        Styler: The same Styler object with the caption applied.
+    """
     
+    return styled.set_caption(caption_text).set_table_styles(
+        [
+            {
+                "selector": "caption",
+                "props": [
+                    ("color", "black"),
+                    ("font-size", "16px"),
+                    ("font-weight", "bold"),
+                    ("border-bottom", "1px solid black"),
+                    ("background-color", "#c6c6c6"),
+                ],
+            }
+        ],
+        overwrite = False,
+    )
+
 def label_test_dataset(
     test_stats: pd.DataFrame,
     results: Dict[str, pd.DataFrame],
